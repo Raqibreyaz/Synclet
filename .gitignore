@@ -1,1 +1,7 @@
 build
+generateFiles.cpp
+test
+snap-file.json
+synclet
+generateFiles
+*.o

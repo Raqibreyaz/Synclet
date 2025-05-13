@@ -1,13 +1,17 @@
 - when a file is modified check what is in it changed, just extract that part
 - do we require inotify API? (will consider after creating the main logic)
-- fixed size chunking 
+- fixed size chunking ✅
 - content defined chunking
-- breaking file into chunks
-- where will we save the chunks & the previous state
-- comparing chunked hashes
-- hashing(crypto)
+- breaking file into chunks✅
+- where will we save the chunks & the previous state -> snap-file.json ✅
+- comparing chunked hashes ✅
+- hashing(crypto) ✅
 
 - detecting if something has changed in the folder/file ✅
 - using inotify api check which file is changed then compare both the states using the chunks and take out the changed ones
 - but the problem is that the program runs continously watching files
 - which will be better if on changing files run the program and on basis of it will sync to server or watch continously and as soon as change received then sync it(but works for every byte , debouncing like logic will be required here)
+
+- map stores all the file snaps, ❌(it is must)
+- for every change it resets the whole SNAP_FILE ✅ 
+- if a file changes then extract that file's chunks, compare every chunk and replace only that changed chunks in the SNAP_FILE ❌ (not possible for .json)

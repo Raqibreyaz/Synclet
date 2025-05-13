@@ -1,25 +1,115 @@
 #include <iostream>
+#include <sys/inotify.h>
+#include <csignal>
+#include <stdexcept>
+#include <unistd.h>
+#include <filesystem>
+#include <functional>
 #include "../include/synclet.hpp"
+
+#define SNAP_FILE "./snap-file.json"
+#define WORKING_DIR "./test"
+#define BUFFER_SIZE 4096
+
+std::function<void(int)> signal_lambda = nullptr;
+
+void signal_handler(int sig)
+{
+    if (signal_lambda)
+        signal_lambda(sig);
+}
 
 int main(int argc, char *argv[])
 {
-    if (argc < 2)
-    {
-        std::cout << "Usage: " << argv[0] << " <directory>\n";
-        return 1;
-    }
-    std::string dir = argv[1];
+    // create an inotify instance
+    int infd = inotify_init();
+    if (infd == -1)
+        throw std::runtime_error("failed to create inotify instance");
 
-    auto snapshots = State::scan_directory(dir);
-    for (const auto &file : snapshots)
+    // create a watcher for watching files/directory
+    int wd = inotify_add_watch(infd, WORKING_DIR, IN_CLOSE_WRITE | IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO);
+    if (wd == -1)
+        throw std::runtime_error("failed to create watcher");
+
+    // buffer for storing the raw events
+    char buffer[BUFFER_SIZE + 1];
+
+    // for storing a particular event
+    struct inotify_event *event = nullptr;
+
+    // snapshot so far
+    auto prevSnapshot = State::load_snapshot(SNAP_FILE);
+
+    // take the snapshot of all the files
+    auto currSnapshot = State::scan_directory(WORKING_DIR);
+
+    // control when ctrl + c pressed
+    signal_lambda = [infd, wd, &currSnapshot, &prevSnapshot](int sig)
     {
-        std::cout << "File: " << file.path << "\n";
-        for (const auto &chunk : file.chunks)
+        // closing the watcher
+        inotify_rm_watch(infd, wd);
+        // closing the inotify fd
+        close(infd);
+
+        State::compare_snapshots(currSnapshot, prevSnapshot);
+
+        State::save_snapshot(SNAP_FILE, currSnapshot);
+
+        exit(EXIT_SUCCESS);
+    };
+
+    // when ctrl + c pressed then do this
+    signal(SIGINT, signal_handler);
+
+    while (true)
+    {
+        std::clog << "Waiting for changes..." << std::endl;
+
+        // read the events
+        ssize_t bytes_read = read(infd, buffer, BUFFER_SIZE);
+
+        if (bytes_read <= 0)
+            continue;
+
+        // now log all the events
+        const char *ptr = buffer;
+        while (ptr < buffer + bytes_read)
         {
-            std::cout << "  Chunk offset: " << chunk.offset
-                      << ", size: " << chunk.size
-                      << ", hash: " << chunk.hash << "\n";
+            // extract the event using the ptr
+            event = (struct inotify_event *)ptr;
+
+            // move ptr to next event
+            ptr += sizeof(struct inotify_event) + event->len;
+
+            // skip if there is no file path
+            if (event->len == 0)
+                continue;
+
+            // creating filepath
+            std::string file_path(std::string(WORKING_DIR) + "/" + event->name);
+
+            // remove the file from track as it is removed from directory
+            if (event->mask & (IN_DELETE | IN_MOVED_FROM))
+            {
+                currSnapshot.erase(file_path);
+                std::clog << "Removed: " << file_path << std::endl;
+            }
+
+            // when the file exists then update its snapshot
+            else if (fs::exists(file_path))
+            {
+                // now update the file
+                currSnapshot[file_path] = createSnapshot(file_path,
+                                                         fs::file_size(file_path),
+                                                         to_unix_timestamp(fs::last_write_time(file_path)));
+                std::clog << "Updated: " << file_path << std::endl;
+            }
+
+            // fallback when either conditions not worked
+            else
+                std::cerr << "changed file not found " << file_path << std::endl;
         }
     }
+
     return 0;
 }
