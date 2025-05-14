@@ -1,4 +1,5 @@
 #include "../include/synclet.hpp"
+#include <deque>
 
 ChunkInfo::ChunkInfo() = default;
 
@@ -16,6 +17,8 @@ std::time_t to_unix_timestamp(const fs::file_time_type &mtime)
 
 std::string create_hash(const std::vector<char> &data)
 {
+    std::deque<char> dq;
+
     unsigned char hash[SHA256_DIGEST_LENGTH];
 
     SHA256(reinterpret_cast<const unsigned char *>(data.data()), data.size(), hash);
@@ -29,7 +32,8 @@ std::string create_hash(const std::vector<char> &data)
     return oss.str();
 }
 
-FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_size, const time_t last_write_time, const size_t chunk_size)
+// creates snapshot of the file using content dependent chunking
+FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_size, const time_t last_write_time)
 {
     // open the file
     std::ifstream file(file_path, std::ios::binary);
@@ -40,27 +44,74 @@ FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_si
     // create a snapshot of the file
     FileSnapshot snapshot(file_size, last_write_time, {});
 
-    //  count total chunks for the file
-    size_t noOfChunks = (file_size + chunk_size - 1) / chunk_size;
+    // min window size: 32
+    // max window size: 128
+    const int w_size = std::clamp<int>(file_size / 1000000, 32, 128);
 
-    // now collect every chunk
-    for (size_t i = 0; i < noOfChunks; i++)
+    // min n: 2048
+    const int n = std::max(2048, static_cast<int>(file_size / (512 * 1024)));
+
+    const int modulo = 1e9 + 7;
+    const int base = 256;
+
+    // for computing hash
+    long long hash = 0;
+    size_t chunk_start = 0;
+
+    // calculating highest power to avoid recomputation
+    long long highest_power = 1;
+    for (int i = 0; i < w_size - 1; i++)
+        highest_power = (highest_power * base) % modulo;
+
+    std::deque<char> window;
+    std::vector<char> chunk;
+
+    const auto roll_hash = [&](char c)
     {
-        // find the no of bytes to read
-        int bytes_to_read = std::min(chunk_size, file_size - i * chunk_size);
-        std::vector<char> buffer(bytes_to_read);
+        hash = (1LL * hash * base + c) % modulo;
+        window.push_back(c);
+    };
 
-        // read that specified chunk
-        file.read(buffer.data(), bytes_to_read);
+    // process a character each time
+    char c = '\0';
+    while (file.get(c))
+    {
+        chunk.push_back(c);
 
-        // store the chunk by hashing
-        snapshot.chunks.emplace_back(i * chunk_size, bytes_to_read, create_hash(buffer));
-    }
+        // when the window is small then complete it
+        if (window.size() >= w_size)
+        {
+            // take out the first char from window and hash
+            char out_char = window.front();
+            window.pop_front();
+            long long removed = 1LL * out_char * highest_power % modulo;
+            hash = (1LL * hash - removed + modulo) % modulo;
+        }
+
+        // add the char to hash and window
+        roll_hash(c);
+
+        // when a chunk boundary found then process it
+        if (window.size() >= w_size && hash % n == 0)
+        {
+            snapshot.chunks.emplace_back(chunk_start, chunk.size(), create_hash(chunk));
+
+            // move to next chunk
+            chunk_start += chunk.size();
+            chunk.clear();
+            window.clear();
+            hash = 0;
+        }
+    };
+
+    if (!chunk.empty())
+        snapshot.chunks.emplace_back(chunk_start, chunk.size(), create_hash(chunk));
+
     return snapshot;
 }
 
 // Scan a directory and build a snapshot of all files and their chunks
-std::unordered_map<std::string, FileSnapshot> State::scan_directory(const std::string &dir, size_t chunk_size)
+std::unordered_map<std::string, FileSnapshot> State::scan_directory(const std::string &dir)
 {
     // to store all the snapshots of files
     std::unordered_map<std::string, FileSnapshot> snapshots;
@@ -71,7 +122,7 @@ std::unordered_map<std::string, FileSnapshot> State::scan_directory(const std::s
         if (!entry.is_regular_file())
             continue;
 
-        FileSnapshot snapshot = createSnapshot(entry.path(), entry.file_size(), to_unix_timestamp(fs::last_write_time(entry.path())), chunk_size);
+        FileSnapshot snapshot = createSnapshot(entry.path(), entry.file_size(), to_unix_timestamp(fs::last_write_time(entry.path())));
 
         // store the snapshot
         snapshots[entry.path().string()] = std::move(snapshot);
@@ -80,7 +131,6 @@ std::unordered_map<std::string, FileSnapshot> State::scan_directory(const std::s
     return snapshots;
 }
 
-// TODO: optimise for rollup chunking
 // Compare two snapshots and return changed/added/deleted chunks
 void State::compare_snapshots(
     const std::unordered_map<std::string, FileSnapshot> &currSnapshot, const std::unordered_map<std::string, FileSnapshot> &prevSnapshot)
@@ -130,6 +180,9 @@ bool State::check_file_modification(const FileSnapshot &file_curr_snap, const Fi
 
         if (chunk_a.hash != chunk_b.hash)
         {
+            std::clog << "offset_1: " << chunk_a.offset << "\toffset_2: " << chunk_b.offset << std::endl;
+            std::clog << "size_1: " << chunk_a.size << "\tsize_2: " << chunk_b.size << std::endl;
+
             std::clog << std::format("[{},{}] changed", chunk_a.offset, chunk_a.size) << std::endl;
             isChanged = true;
         }

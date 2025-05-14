@@ -12,8 +12,6 @@
 #include <openssl/sha.h>
 #include <iostream>
 
-#define DEFAULT_CHUNK_SIZE 4096 // 4KB
-
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
@@ -38,13 +36,13 @@ struct FileSnapshot
 
 std::time_t to_unix_timestamp(const fs::file_time_type &mtime);
 std::string create_hash(const std::vector<char> &data);
-FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_size, const time_t last_write_time, const size_t chunk_size = DEFAULT_CHUNK_SIZE);
+FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_size, const time_t last_write_time);
 
 class State
 {
 public:
     // Scan a directory and build a snapshot of all files and their chunks
-    static std::unordered_map<std::string, FileSnapshot> scan_directory(const std::string &dir, size_t chunk_size = DEFAULT_CHUNK_SIZE);
+    static std::unordered_map<std::string, FileSnapshot> scan_directory(const std::string &dir);
 
     // Compare two snapshots and return changed/added/deleted chunks
     static void compare_snapshots(
