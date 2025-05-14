@@ -19,6 +19,20 @@ void signal_handler(int sig)
         signal_lambda(sig);
 }
 
+// offset_1 : 914 
+// offset_2 : 914 
+// size_1 : 429 
+// size_2 : 430
+// [914, 429] changed
+// in ./test/file_2.txt 
+
+// offset_1 : 0 
+// offset_2 : 0 
+// size_1 : 2762 
+// size_2 : 2763 
+// [0, 2762] changed 
+// in./ test / file_20.txt
+
 int main(int argc, char *argv[])
 {
     // create an inotify instance
