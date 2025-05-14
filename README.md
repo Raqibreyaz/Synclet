@@ -7,6 +7,9 @@ Synclet is a C++ module for efficient file synchronization. It tracks and syncs 
 - Tracks files in a directory and breaks them into chunks
 - Detects which chunks have changed, been added, or deleted
 - Syncs only the changed chunks, not entire files
+- uses inotify for efficiently find the changed file
+- instead of writing the change to disk each time it buffers it and bulk write at program end
+- uses content defined chunking for better chunk handling
 - Simple C++ API for integration
 
 ## Planned

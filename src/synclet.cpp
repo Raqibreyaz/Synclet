@@ -130,7 +130,9 @@ bool State::check_file_modification(const FileSnapshot &file_curr_snap, const Fi
 
         if (chunk_a.hash != chunk_b.hash)
         {
-            std::clog << std::format("[{},{}] changed", chunk_a.offset, chunk_a.size) << std::endl;
+            std::clog << "chunks not matched : " << std::endl
+                      << "start_1: " << chunk_a.offset << "\tstart_2: " << chunk_b.offset << std::endl
+                      << "end_1: " << chunk_a.offset + chunk_a.size << "\tend_2: " << chunk_b.offset + chunk_b.size << std::endl;
             isChanged = true;
         }
     }

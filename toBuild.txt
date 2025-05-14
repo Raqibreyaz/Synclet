@@ -15,3 +15,9 @@
 - map stores all the file snaps, ❌(it is must)
 - for every change it resets the whole SNAP_FILE ✅ 
 - if a file changes then extract that file's chunks, compare every chunk and replace only that changed chunks in the SNAP_FILE ❌ (not possible for .json)
+
+CDC(content defined chunking)
+- fixed size chunking fails to correctly identifies the changed chunk as the chunks afterwards also shifts  so using CDC
+- chunks are created using (hash % N == 0), if this condition met for a window
+- 2 important vars, N and window size 
+- chunks can be of ~N size but not ==N
