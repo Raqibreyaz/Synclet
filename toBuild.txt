@@ -6,8 +6,7 @@
 - where will we save the chunks & the previous state -> snap-file.json ✅
 - comparing chunked hashes ✅
 - hashing(crypto) ✅
-
-- detecting if something has changed in the folder/file ✅
+ detecting if something has changed in the folder/file ✅
 - using inotify api check which file is changed then compare both the states using the chunks and take out the changed ones
 - but the problem is that the program runs continously watching files
 - which will be better if on changing files run the program and on basis of it will sync to server or watch continously and as soon as change received then sync it(but works for every byte , debouncing like logic will be required here)
@@ -21,3 +20,5 @@ CDC(content defined chunking)
 - chunks are created using (hash % N == 0), if this condition met for a window
 - 2 important vars, N and window size 
 - chunks can be of ~N size but not ==N
+
+-in case of just rename not deletion then instead of sending file, rename in the server too!!

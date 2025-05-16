@@ -1,13 +1,12 @@
-#include "../include/synclet.hpp"
-#include <deque>
+#include "../include/utils.hpp"
 
 ChunkInfo::ChunkInfo() = default;
 
-ChunkInfo::ChunkInfo(size_t offset, size_t size, const std::string &hash) : offset(offset), size(size), hash(hash) {}
+ChunkInfo::ChunkInfo(size_t offset, size_t file_size, const std::string &hash) : offset(offset), chunk_size(chunk_size), hash(hash) {}
 
 FileSnapshot::FileSnapshot() = default;
 
-FileSnapshot::FileSnapshot(const uint64_t &size, const std::time_t &mtime, const std::vector<ChunkInfo> &chunks) : size(size), mtime(mtime), chunks(chunks) {}
+FileSnapshot::FileSnapshot(const uint64_t &size, const std::time_t &mtime, const std::vector<ChunkInfo> &chunks) : file_size(file_size), mtime(mtime), chunks(chunks) {}
 
 std::time_t to_unix_timestamp(const fs::file_time_type &mtime)
 {
@@ -111,7 +110,7 @@ FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_si
 }
 
 // Scan a directory and build a snapshot of all files and their chunks
-std::unordered_map<std::string, FileSnapshot> State::scan_directory(const std::string &dir)
+std::unordered_map<std::string, FileSnapshot> scan_directory(const std::string &dir)
 {
     // to store all the snapshots of files
     std::unordered_map<std::string, FileSnapshot> snapshots;
@@ -124,15 +123,20 @@ std::unordered_map<std::string, FileSnapshot> State::scan_directory(const std::s
 
         FileSnapshot snapshot = createSnapshot(entry.path(), entry.file_size(), to_unix_timestamp(fs::last_write_time(entry.path())));
 
+        // fidn the last slash to extract filename
+        size_t lastSlash = entry.path().string().find_last_of('/');
+        if (lastSlash == std::string::npos)
+            lastSlash = -1;
+
         // store the snapshot
-        snapshots[entry.path().string()] = std::move(snapshot);
+        snapshots[entry.path().string().substr(lastSlash + 1)] = std::move(snapshot);
     }
 
     return snapshots;
 }
 
 // Compare two snapshots and return changed/added/deleted chunks
-void State::compare_snapshots(
+void compare_snapshots(
     const std::unordered_map<std::string, FileSnapshot> &currSnapshot, const std::unordered_map<std::string, FileSnapshot> &prevSnapshot)
 {
     // to track if anything is changed
@@ -151,7 +155,7 @@ void State::compare_snapshots(
         }
 
         // check for file modification
-        else if ((snap.size != prev_snap->second.size || snap.mtime != prev_snap->second.mtime) && State::check_file_modification(snap, prev_snap->second))
+        else if ((snap.file_size != prev_snap->second.file_size|| snap.mtime != prev_snap->second.mtime) && check_file_modification(snap, prev_snap->second))
         {
             std::clog << std::format("in {}", path) << std::endl;
             isChanged = true;
@@ -170,7 +174,7 @@ void State::compare_snapshots(
         std::clog << "no changes found" << std::endl;
 }
 
-bool State::check_file_modification(const FileSnapshot &file_curr_snap, const FileSnapshot &file_prev_snap)
+bool check_file_modification(const FileSnapshot &file_curr_snap, const FileSnapshot &file_prev_snap)
 {
     bool isChanged = false;
     for (size_t i = 0; i < std::min(file_curr_snap.chunks.size(), file_prev_snap.chunks.size()); i++)
@@ -181,12 +185,12 @@ bool State::check_file_modification(const FileSnapshot &file_curr_snap, const Fi
         if (chunk_a.hash != chunk_b.hash)
         {
             std::clog << "offset_1: " << chunk_a.offset << "\toffset_2: " << chunk_b.offset << std::endl;
-            std::clog << "size_1: " << chunk_a.size << "\tsize_2: " << chunk_b.size << std::endl;
+            std::clog << "size_1: " << chunk_a.chunk_size << "\tsize_2: " << chunk_b.chunk_size << std::endl;
 
-            std::clog << std::format("[{},{}] changed", chunk_a.offset, chunk_a.size) << std::endl;
+            std::clog << std::format("[{},{}] changed", chunk_a.offset, chunk_a.chunk_size) << std::endl;
             std::clog << "chunks not matched : " << std::endl
                       << "start_1: " << chunk_a.offset << "\tstart_2: " << chunk_b.offset << std::endl
-                      << "end_1: " << chunk_a.offset + chunk_a.size << "\tend_2: " << chunk_b.offset + chunk_b.size << std::endl;
+                      << "end_1: " << chunk_a.offset + chunk_a.chunk_size << "\tend_2: " << chunk_b.offset + chunk_b.chunk_size << std::endl;
             isChanged = true;
         }
     }
@@ -194,7 +198,7 @@ bool State::check_file_modification(const FileSnapshot &file_curr_snap, const Fi
 }
 
 // will save the snapshots as json in the file
-void State::save_snapshot(const std::string &filename, const std::unordered_map<std::string, FileSnapshot> &snaps)
+void save_snapshot(const std::string &filename, const std::unordered_map<std::string, FileSnapshot> &snaps)
 {
     json j = json::array();
 
@@ -202,14 +206,14 @@ void State::save_snapshot(const std::string &filename, const std::unordered_map<
     {
         json file_json;
         file_json["path"] = path;
-        file_json["size"] = snap.size;
+        file_json["size"] = snap.file_size;
         file_json["mtime"] = snap.mtime;
         file_json["chunks"] = json::array();
 
         for (const auto &chunk : snap.chunks)
         {
             file_json["chunks"].push_back({{"offset", chunk.offset},
-                                           {"size", chunk.size},
+                                           {"size", chunk.chunk_size},
                                            {"hash", chunk.hash}});
         }
         j.push_back(file_json);
@@ -225,7 +229,7 @@ void State::save_snapshot(const std::string &filename, const std::unordered_map<
 }
 
 // will load the saved file snaps from json
-std::unordered_map<std::string, FileSnapshot> State::load_snapshot(const std::string &filename)
+std::unordered_map<std::string, FileSnapshot> load_snapshot(const std::string &filename)
 {
     std::ifstream file(filename);
 
@@ -258,7 +262,7 @@ std::unordered_map<std::string, FileSnapshot> State::load_snapshot(const std::st
         {
             ChunkInfo chunk;
             chunk.offset = chunk_json["offset"].get<size_t>();
-            chunk.size = chunk_json["size"].get<size_t>();
+            chunk.chunk_size = chunk_json["size"].get<size_t>();
             chunk.hash = chunk_json["hash"].get<std::string>();
 
             chunks.push_back(std::move(chunk));

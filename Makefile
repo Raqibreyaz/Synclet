@@ -2,23 +2,36 @@ VCPKG := $(HOME)/vcpkg
 CXX := g++
 CXX_FLAGS := -Wall -Wextra -g -std=c++20 -I$(VCPKG)/installed/x64-linux/include
 
-SRCS := src/main.cpp \
-		src/synclet.cpp
+CLIENT_SRCS := client/client.cpp \
+	src/message.cpp \
+	src/tcp-socket.cpp \
+	src/utils.cpp
 
-OBJS = $(SRCS:.cpp=.o)
+SERVER_SRCS := server/server.cpp \
+	src/message.cpp \
+	src/tcp-socket.cpp \
+	src/utils.cpp
 
-OUT := synclet
+CLIENT_OBJS = $(CLIENT_SRCS:.cpp=.o)
+SERVER_OBJS = $(SERVER_SRCS:.cpp=.o)
+
+CLIENT_OUT = client/client
+SERVER_OUT = server/server
 
 %.o: %.cpp
 	$(CXX) $(CXX_FLAGS) -c $< -o $@
 
-$(OUT): $(OBJS)
+$(CLIENT_OUT): $(CLIENT_OBJS)
 		$(CXX) $(CXX_FLAGS) -o $@ $^ -lssl -lcrypto
 
-all: 
-	$(CXX) $(CXX_FLAGS) $(SRC) -o $(OUT) 
+$(SERVER_OUT): $(SERVER_OBJS)
+		$(CXX) $(CXX_FLAGS) -o $@ $^ -lssl -lcrypto
+
+all: $(CLIENT_OUT) $(SERVER_OUT) 
 
 clean:	
-	rm -rf $(OUT) $(OBJS)
+	rm -rf $(CLIENT_OUT) $(SERVER_OUT) $(SERVER_OBJS) $(CLIENT_OBJS)
+
+
 
 # g++ a.cpp b.cpp -o x
