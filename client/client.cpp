@@ -3,6 +3,7 @@
 #include <cstring>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <ranges>
 #include <unordered_map>
 #include "../include/utils.hpp"
 #include "../include/tcp-socket.hpp"
@@ -13,76 +14,57 @@
 #define DATA_DIR "./data"
 #define SNAP_FILE "./snap-file.json"
 
-int connecter()
-{
-    int sock;
-    struct sockaddr_in server_addr{};
-    char buffer[BUFFER_SIZE];
-
-    // 1. Create socket
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0)
-    {
-        perror("socket failed");
-        return 1;
-    }
-
-    // 2. Setup address
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT);
-    inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr);
-
-    // 3. Connect to server
-    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
-    {
-        perror("connect failed");
-        close(sock);
-        return 1;
-    }
-
-    std::string handshake = "SYNCLET_HELLO";
-    send(sock, handshake.c_str(), handshake.size(), 0);
-    std::cout << "📨 Sent: " << handshake << std::endl;
-
-    // 4. Read response
-    ssize_t bytes = read(sock, buffer, BUFFER_SIZE - 1);
-    buffer[bytes] = '\0';
-
-    std::cout << "📥 Received: " << buffer << std::endl;
-
-    // 5. Cleanup
-    close(sock);
-
-    return 0;
-}
-
 int main()
 {
     auto snaps = load_snapshot(SNAP_FILE);
 
     if (snaps.empty())
+    {
         snaps = scan_directory(DATA_DIR);
+        save_snapshot(SNAP_FILE, snaps);
+    }
 
-    save_snapshot(SNAP_FILE, snaps);
+    TcpConnection client;
 
-    // TcpConnection client(SERVER_IP, std::to_string(PORT));
+    client.connectToServer(SERVER_IP, std::to_string(PORT));
 
-    // std::string msg_string = client.receiveAll();
+    std::clog << "waiting for server message" << std::endl;
 
-    // std::clog << "request from server: " << msg_string << std::endl;
+    std::string server_message = client.receiveAll();
 
-    // json j;
-    // Message msg;
+    std::clog << "server message: " << server_message << std::endl;
 
-    // // convert to object
-    // from_json(msg_string, msg);
+    json j;
+    Message msg, server_msg;
 
-    // if (msg.type == Type::REQUEST_SYNC)
-    // {
+    // convert to object
+    from_json(json::parse(server_message), server_msg);
 
-    // }
+    if (server_msg.type == Type::REQUEST_SYNC)
+    {
+        std::clog << "sync request received" << std::endl;
+        msg.type = Type::SNAPSHOT_SYNC;
 
-    // client.closeConnection();
+        // creating vector for sending filesnapshots
+        std::vector<FileSnapshot> values;
+        std::transform(snaps.begin(), snaps.end(), std::back_inserter(values),
+                       [](const auto &pair)
+                       { return pair.second; });
+
+        // storing snapshot as payload
+        msg.payload = SnapshotSyncPayload{.file_snapshots = values};
+
+        // converting message to json
+        to_json(j, msg);
+        std::string message = j.dump();
+
+        std::clog << "sending message size: " << message.size() << std::endl;
+
+        // sending the message
+        client.sendAll(message);
+    }
+
+    client.closeConnection();
 
     return 0;
 }

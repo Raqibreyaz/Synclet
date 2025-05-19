@@ -22,3 +22,7 @@ CDC(content defined chunking)
 - chunks can be of ~N size but not ==N
 
 -in case of just rename not deletion then instead of sending file, rename in the server too!!
+
+- take 1 step back and see how nlohmann/json works for structs and classes
+- study every aspect of virtual functions
+- explicit methods revision

@@ -40,7 +40,7 @@ Type message_type_from_string(const std::string &type)
 // converts message to json
 void to_json(json &j, const Message &msg)
 {
-    j["type"] = msg.type;
+    j["type"] = message_type_to_string(msg.type);
 
     std::visit([&](auto &actualPayload)
                {

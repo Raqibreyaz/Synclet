@@ -25,7 +25,7 @@ struct ChunkInfo
     std::string hash;
     int chunk_no;
     ChunkInfo();
-    ChunkInfo(size_t offset, size_t size, const std::string &hash);
+    ChunkInfo(size_t offset, size_t _chunksize, const std::string &hash,int chunk_no);
 };
 
 // a complete snapshot of file
@@ -37,7 +37,7 @@ struct FileSnapshot
     std::vector<ChunkInfo> chunks;
 
     FileSnapshot();
-    FileSnapshot(const uint64_t &size, const std::time_t &mtime, const std::vector<ChunkInfo> &chunks);
+    FileSnapshot(const std::string& filename,const uint64_t &file_size, const std::time_t &mtime, const std::vector<ChunkInfo> &chunks);
 };
 
 // filename and the chunks required from it
@@ -53,8 +53,6 @@ struct SnapshotSyncPayload
 {
     std::vector<FileSnapshot> file_snapshots;
 };
-
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(SnapshotSyncPayload, file_snapshots);
 
 // payload when requesting required files
 struct SyncRequiredPayload
@@ -91,3 +89,8 @@ struct Message
 void to_json(json &j, const Message &msg);
 
 void from_json(const json &j, Message &msg);
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ChunkInfo, offset, chunk_size, hash, chunk_no)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(FileSnapshot, filename, file_size, mtime, chunks)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(FileSyncRequired, filename, required_chunks, is_whole_file_required)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(SnapshotSyncPayload, file_snapshots);

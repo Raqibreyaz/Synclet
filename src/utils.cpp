@@ -2,11 +2,21 @@
 
 ChunkInfo::ChunkInfo() = default;
 
-ChunkInfo::ChunkInfo(size_t offset, size_t file_size, const std::string &hash) : offset(offset), chunk_size(chunk_size), hash(hash) {}
+ChunkInfo::ChunkInfo(size_t offset, size_t chunk_size, const std::string &hash, int chunk_no)
+    : offset(offset),
+      chunk_size(chunk_size),
+      hash(hash),
+      chunk_no(chunk_no)
+{
+}
 
 FileSnapshot::FileSnapshot() = default;
 
-FileSnapshot::FileSnapshot(const uint64_t &size, const std::time_t &mtime, const std::vector<ChunkInfo> &chunks) : file_size(file_size), mtime(mtime), chunks(chunks) {}
+FileSnapshot::FileSnapshot(const std::string &filename, const uint64_t &file_size, const std::time_t &mtime, const std::vector<ChunkInfo> &chunks)
+    : filename(filename),
+      file_size(file_size),
+      mtime(mtime),
+      chunks(chunks) {}
 
 std::time_t to_unix_timestamp(const fs::file_time_type &mtime)
 {
@@ -31,6 +41,7 @@ std::string create_hash(const std::vector<char> &data)
     return oss.str();
 }
 
+// TODO: optimise instead of getting single char from file get more
 // creates snapshot of the file using content dependent chunking
 FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_size, const time_t last_write_time)
 {
@@ -40,8 +51,12 @@ FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_si
     if (!file)
         throw std::runtime_error(std::format("{} {}", "failed to open file", file_path));
 
+    size_t last_slash = file_path.find_last_of('/');
+    if (last_slash == std::string::npos)
+        last_slash = 0;
+
     // create a snapshot of the file
-    FileSnapshot snapshot(file_size, last_write_time, {});
+    FileSnapshot snapshot(file_path.substr(last_slash + 1), file_size, last_write_time, {});
 
     // min window size: 32
     // max window size: 128
@@ -73,12 +88,13 @@ FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_si
 
     // process a character each time
     char c = '\0';
+    int chunk_no = 0;
     while (file.get(c))
     {
         chunk.push_back(c);
 
         // when the window is small then complete it
-        if (window.size() >= w_size)
+        if (window.size() >= static_cast<size_t>(w_size))
         {
             // take out the first char from window and hash
             char out_char = window.front();
@@ -91,20 +107,21 @@ FileSnapshot createSnapshot(const std::string &file_path, const uint64_t file_si
         roll_hash(c);
 
         // when a chunk boundary found then process it
-        if (window.size() >= w_size && hash % n == 0)
+        if (window.size() >= static_cast<size_t>(w_size) && hash % n == 0)
         {
-            snapshot.chunks.emplace_back(chunk_start, chunk.size(), create_hash(chunk));
+            snapshot.chunks.emplace_back(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
 
             // move to next chunk
             chunk_start += chunk.size();
             chunk.clear();
             window.clear();
             hash = 0;
+            chunk_no++;
         }
     };
 
     if (!chunk.empty())
-        snapshot.chunks.emplace_back(chunk_start, chunk.size(), create_hash(chunk));
+        snapshot.chunks.emplace_back(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
 
     return snapshot;
 }
@@ -121,6 +138,7 @@ std::unordered_map<std::string, FileSnapshot> scan_directory(const std::string &
         if (!entry.is_regular_file())
             continue;
 
+        // full path requird for opening file
         FileSnapshot snapshot = createSnapshot(entry.path(), entry.file_size(), to_unix_timestamp(fs::last_write_time(entry.path())));
 
         // fidn the last slash to extract filename
@@ -143,30 +161,30 @@ void compare_snapshots(
     bool isChanged = false;
 
     // check for file addition & modification
-    for (const auto &[path, snap] : currSnapshot)
+    for (const auto &[filename, snap] : currSnapshot)
     {
-        const auto prev_snap = prevSnapshot.find(path);
+        const auto prev_snap = prevSnapshot.find(filename);
 
         // check for file addition
         if (prev_snap == prevSnapshot.end())
         {
-            std::clog << std::format("{} file is added", path) << std::endl;
+            std::clog << std::format("{} file is added", filename) << std::endl;
             isChanged = true;
         }
 
         // check for file modification
-        else if ((snap.file_size != prev_snap->second.file_size|| snap.mtime != prev_snap->second.mtime) && check_file_modification(snap, prev_snap->second))
+        else if ((snap.file_size != prev_snap->second.file_size || snap.mtime != prev_snap->second.mtime) && check_file_modification(snap, prev_snap->second))
         {
-            std::clog << std::format("in {}", path) << std::endl;
+            std::clog << std::format("in {}", filename) << std::endl;
             isChanged = true;
         }
     }
 
     // check for file deletion
-    for (const auto &[path, snap] : prevSnapshot)
-        if (currSnapshot.find(path) == currSnapshot.end())
+    for (const auto &[filename, snap] : prevSnapshot)
+        if (currSnapshot.find(filename) == currSnapshot.end())
         {
-            std::clog << std::format("{} file is deleted!", path) << std::endl;
+            std::clog << std::format("{} file is deleted!", filename) << std::endl;
             isChanged = true;
         }
 
@@ -174,6 +192,7 @@ void compare_snapshots(
         std::clog << "no changes found" << std::endl;
 }
 
+// TODO: optimise for better change detection
 bool check_file_modification(const FileSnapshot &file_curr_snap, const FileSnapshot &file_prev_snap)
 {
     bool isChanged = false;
@@ -202,19 +221,21 @@ void save_snapshot(const std::string &filename, const std::unordered_map<std::st
 {
     json j = json::array();
 
-    for (const auto &[path, snap] : snaps)
+    for (const auto &[filename, snap] : snaps)
     {
         json file_json;
-        file_json["path"] = path;
+        file_json["filename"] = snap.filename;
         file_json["size"] = snap.file_size;
         file_json["mtime"] = snap.mtime;
         file_json["chunks"] = json::array();
 
         for (const auto &chunk : snap.chunks)
         {
-            file_json["chunks"].push_back({{"offset", chunk.offset},
-                                           {"size", chunk.chunk_size},
-                                           {"hash", chunk.hash}});
+            file_json["chunks"]
+                .push_back({{"offset", chunk.offset},
+                            {"size", chunk.chunk_size},
+                            {"hash", chunk.hash},
+                            {"chunk_no", chunk.chunk_no}});
         }
         j.push_back(file_json);
     }
@@ -252,7 +273,7 @@ std::unordered_map<std::string, FileSnapshot> load_snapshot(const std::string &f
 
     for (const auto &file_json : j)
     {
-        const std::string path = file_json["path"].get<std::string>();
+        const std::string filename = file_json["filename"].get<std::string>();
         const uint64_t file_size = file_json["size"].get<uint64_t>();
         const std::time_t mtime = file_json["mtime"].get<std::time_t>();
 
@@ -264,11 +285,12 @@ std::unordered_map<std::string, FileSnapshot> load_snapshot(const std::string &f
             chunk.offset = chunk_json["offset"].get<size_t>();
             chunk.chunk_size = chunk_json["size"].get<size_t>();
             chunk.hash = chunk_json["hash"].get<std::string>();
+            chunk.chunk_no = chunk_json["chunk_no"].get<int>();
 
             chunks.push_back(std::move(chunk));
         }
 
-        snapshots[path] = FileSnapshot(file_size, mtime, chunks);
+        snapshots[filename] = FileSnapshot(filename, file_size, mtime, chunks);
     }
 
     return snapshots;
