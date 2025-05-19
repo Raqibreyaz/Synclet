@@ -154,11 +154,11 @@ std::unordered_map<std::string, FileSnapshot> scan_directory(const std::string &
 }
 
 // Compare two snapshots and return changed/added/deleted chunks
-void compare_snapshots(
+DirChanges compare_snapshots(
     const std::unordered_map<std::string, FileSnapshot> &currSnapshot, const std::unordered_map<std::string, FileSnapshot> &prevSnapshot)
 {
     // to track if anything is changed
-    bool isChanged = false;
+    DirChanges changes;
 
     // check for file addition & modification
     for (const auto &[filename, snap] : currSnapshot)
@@ -169,14 +169,14 @@ void compare_snapshots(
         if (prev_snap == prevSnapshot.end())
         {
             std::clog << std::format("{} file is added", filename) << std::endl;
-            isChanged = true;
+            changes.created_files.push_back(filename);
         }
 
         // check for file modification
-        else if ((snap.file_size != prev_snap->second.file_size || snap.mtime != prev_snap->second.mtime) && check_file_modification(snap, prev_snap->second))
+        else if (snap.file_size != prev_snap->second.file_size || snap.mtime != prev_snap->second.mtime)
         {
             std::clog << std::format("in {}", filename) << std::endl;
-            isChanged = true;
+            changes.modified_files.push_back(std::move(get_file_modification(snap, prev_snap->second)));
         }
     }
 
@@ -185,35 +185,42 @@ void compare_snapshots(
         if (currSnapshot.find(filename) == currSnapshot.end())
         {
             std::clog << std::format("{} file is deleted!", filename) << std::endl;
-            isChanged = true;
+            changes.removed_files.push_back(filename);
         }
 
-    if (!isChanged)
+    if (changes.created_files.empty() && changes.modified_files.empty() && changes.removed_files.empty())
         std::clog << "no changes found" << std::endl;
+
+    return changes;
 }
 
 // TODO: optimise for better change detection
-bool check_file_modification(const FileSnapshot &file_curr_snap, const FileSnapshot &file_prev_snap)
+FileModification get_file_modification(const FileSnapshot &file_curr_snap, const FileSnapshot &file_prev_snap)
 {
-    bool isChanged = false;
-    for (size_t i = 0; i < std::min(file_curr_snap.chunks.size(), file_prev_snap.chunks.size()); i++)
+
+    FileModification changes{.filename = file_curr_snap.filename};
+
+    // for modified chunks
+    size_t i;
+    for (i = 0; i < std::min(file_curr_snap.chunks.size(), file_prev_snap.chunks.size()); ++i)
     {
-        ChunkInfo chunk_a = file_curr_snap.chunks[i];
-        ChunkInfo chunk_b = file_prev_snap.chunks[i];
+        const ChunkInfo &chunk_a = file_curr_snap.chunks[i];
+        const ChunkInfo &chunk_b = file_prev_snap.chunks[i];
 
-        if (chunk_a.hash != chunk_b.hash)
-        {
-            std::clog << "offset_1: " << chunk_a.offset << "\toffset_2: " << chunk_b.offset << std::endl;
-            std::clog << "size_1: " << chunk_a.chunk_size << "\tsize_2: " << chunk_b.chunk_size << std::endl;
-
-            std::clog << std::format("[{},{}] changed", chunk_a.offset, chunk_a.chunk_size) << std::endl;
-            std::clog << "chunks not matched : " << std::endl
-                      << "start_1: " << chunk_a.offset << "\tstart_2: " << chunk_b.offset << std::endl
-                      << "end_1: " << chunk_a.offset + chunk_a.chunk_size << "\tend_2: " << chunk_b.offset + chunk_b.chunk_size << std::endl;
-            isChanged = true;
-        }
+        // when any changes then it is modified
+        if (chunk_a.hash != chunk_b.hash || chunk_a.chunk_size != chunk_b.chunk_size || chunk_a.offset != chunk_b.offset)
+            changes.modified.push_back(chunk_a.chunk_no);
     }
-    return isChanged;
+
+    // for new chunks
+    for (; i < file_curr_snap.chunks.size(); ++i)
+        changes.modified.push_back(file_curr_snap.chunks[i].chunk_no);
+
+    // for removed chunks
+    for (; i < file_prev_snap.chunks.size(); ++i)
+        changes.removed.push_back(file_prev_snap.chunks[i].chunk_no);
+
+    return changes;
 }
 
 // will save the snapshots as json in the file

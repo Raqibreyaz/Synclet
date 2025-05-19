@@ -21,8 +21,11 @@ CDC(content defined chunking)
 - 2 important vars, N and window size 
 - chunks can be of ~N size but not ==N
 
--in case of just rename not deletion then instead of sending file, rename in the server too!!
-
-- take 1 step back and see how nlohmann/json works for structs and classes
-- study every aspect of virtual functions
-- explicit methods revision
+- in case of just rename not deletion then instead of sending file, rename in the server too!!
+- compare changes optimally
+- track renamed files and send 
+- will we save the rename state in the snap-file?
+- how to send the rename state with the snapshot?
+- how to single update when multiple rename of the same file?
+- instead of loggin now we have to return the changed parts for syncing
+- create a minimal version where client on detecting changes using inotify syncs to server
