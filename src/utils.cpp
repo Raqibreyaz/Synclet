@@ -176,7 +176,7 @@ DirChanges compare_snapshots(
         else if (snap.file_size != prev_snap->second.file_size || snap.mtime != prev_snap->second.mtime)
         {
             std::clog << std::format("in {}", filename) << std::endl;
-            changes.modified_files.push_back(std::move(get_file_modification(snap, prev_snap->second)));
+            changes.modified_files.push_back(get_file_modification(snap, prev_snap->second));
         }
     }
 
@@ -194,11 +194,11 @@ DirChanges compare_snapshots(
     return changes;
 }
 
-// TODO: optimise for better change detection
+// compare curr and prev snap of the file and get changes as added, modified, removed chunks
 FileModification get_file_modification(const FileSnapshot &file_curr_snap, const FileSnapshot &file_prev_snap)
 {
 
-    FileModification changes{.filename = file_curr_snap.filename};
+    FileModification changes{.filename = file_curr_snap.filename, .modified = {}, .removed = {}};
 
     // for modified chunks
     size_t i;
@@ -301,4 +301,16 @@ std::unordered_map<std::string, FileSnapshot> load_snapshot(const std::string &f
     }
 
     return snapshots;
+}
+
+std::string extract_filename_from_path(const std::string &path)
+{
+    if (path.empty())
+        return "";
+
+    size_t last_slash = path.find_last_of('/');
+    if (last_slash == std::string::npos)
+        last_slash = -1;
+
+    return path.substr(last_slash + 1);
 }

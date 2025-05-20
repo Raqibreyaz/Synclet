@@ -29,5 +29,7 @@ public:
 
     void closeConnection();
 
+    void shutdownWrite();
+
     int getFD() const;
 };

@@ -11,11 +11,6 @@
 #define DATA_DIR "./data"
 #define SNAP_FILE "./snap-file.json"
 
-int server()
-{
-    return 0;
-}
-
 int main()
 {
     // fetch the snaps from SNAP_FILE
@@ -35,44 +30,20 @@ int main()
     TcpConnection client = server.acceptClient();
 
     json j;
-    Message msg, client_msg;
+    Message msg;
 
-    // request client to send snapshot
-    msg.type = Type::REQUEST_SYNC;
-    msg.payload = {};
+    std::string json_len_string = client.receiveSome(sizeof(u_int32_t));
 
-    // convert request message to json
-    to_json(j, msg);
+    uint32_t json_len;
+    memcpy(&json_len, json_len_string.data(), sizeof(json_len));
+    json_len = ntohl(json_len);
 
-    // send message to client as stringified json
-    client.sendAll(j.dump());
+    std::clog << json_len << " bytes of json" << std::endl;
 
-    // receive message from client(json string)
-    std::string client_message = client.receiveAll();
+    std::string json_message = client.receiveSome(json_len);
+    std::clog << json_message << std::endl;
 
-    std::clog << "received message size: " << client_message.size() << std::endl;
-
-    // convert stringified json to json object to message object
-    from_json(json::parse(client_message), client_msg);
-
-    if (client_msg.type == Type::SNAPSHOT_SYNC)
-    {
-        std::clog << "client has sent snapshots";
-    }
-
-    auto payload = std::get<SnapshotSyncPayload>(client_msg.payload);
-
-    auto client_snaps = std::unordered_map<std::string, FileSnapshot>();
-
-    std::transform(payload.file_snapshots.begin(),
-                   payload.file_snapshots.end(),
-                   std::inserter(client_snaps, client_snaps.end()),
-                   [](const FileSnapshot &snapshot)
-                   {
-                       return make_pair(snapshot.filename, snapshot);
-                   });
-
-    compare_snapshots(client_snaps, snaps);
+    std::clog << "actual data: " << client.receiveAll() << std::endl;
 
     client.closeConnection();
 

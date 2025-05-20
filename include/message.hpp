@@ -14,7 +14,10 @@ enum class Type
     REQUEST_SYNC,
     SNAPSHOT_SYNC,
     SYNC_REQUIRED,
-    SEND_CHUNK
+    SEND_CHUNK,
+    FILE_CREATE,
+    FILE_REMOVE,
+    FILE_RENAME
 };
 
 // info of chunk
@@ -38,6 +41,28 @@ struct FileSnapshot
 
     FileSnapshot();
     FileSnapshot(const std::string& filename,const uint64_t &file_size, const std::time_t &mtime, const std::vector<ChunkInfo> &chunks);
+};
+
+/*
+create
+filename
+
+remove
+filename
+
+rename
+old_filename
+new_filename
+*/
+ 
+
+struct FileCreateRemovePayload{
+    std::string filename;
+};
+
+struct FileRenamePayload{
+    std::string old_filename;
+    std::string new_filename;
 };
 
 // filename and the chunks required from it
@@ -68,6 +93,7 @@ struct SendChunkPayload
     int chunk_no;
     size_t chunk_size;
     size_t offset;
+    bool is_removed;
     bool is_last_chunk;
 
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(SendChunkPayload, filename, chunk_no, chunk_size, offset, is_last_chunk)
@@ -78,7 +104,10 @@ using PayloadVariant = std::variant<
     std::monostate,
     SnapshotSyncPayload,
     SyncRequiredPayload,
-    SendChunkPayload>;
+    SendChunkPayload,
+    FileCreateRemovePayload,
+    FileRenamePayload
+    >;
 
 struct Message
 {
@@ -94,3 +123,5 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ChunkInfo, offset, chunk_size, hash, chunk_no
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(FileSnapshot, filename, file_size, mtime, chunks)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(FileSyncRequired, filename, required_chunks, is_whole_file_required)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(SnapshotSyncPayload, file_snapshots);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(FileCreateRemovePayload,filename);
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(FileRenamePayload,old_filename,new_filename);

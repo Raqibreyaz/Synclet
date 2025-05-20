@@ -14,8 +14,6 @@ void SocketBase::sendAll(const std::string &data)
             throw std::runtime_error("send failed");
         totalSent += sent;
     }
-    // shutting send for EOF
-    shutdown(sockfd, SHUT_WR);
 }
 
 std::string SocketBase::receiveAll()
@@ -30,11 +28,7 @@ std::string SocketBase::receiveAll()
         result.append(buffer, received);
     }
 
-    if (received == 0)
-    {
-        std::clog << "Connection closed by peer." << std::endl;
-    }
-    else if (received < 0)
+    if (received < 0)
     {
         throw std::runtime_error(std::string("recv failed: ") + std::strerror(errno));
     }
@@ -42,12 +36,10 @@ std::string SocketBase::receiveAll()
 }
 std::string SocketBase::receiveSome(size_t maxSize = 1024)
 {
-    char buffer[1024];
-    std::string result;
-    ssize_t received = recv(sockfd, buffer, maxSize, 0);
+    std::string result(maxSize, '\0');
+    ssize_t received = recv(sockfd, result.data(), result.size(), 0);
     if (received < 0)
         throw std::runtime_error("recv failed");
-    result.append(buffer, received);
     return result;
 }
 
@@ -58,6 +50,12 @@ void SocketBase::closeConnection()
         close(sockfd);
         sockfd = -1;
     }
+}
+
+void SocketBase::shutdownWrite()
+{
+    if (sockfd != -1)
+        shutdown(sockfd, SHUT_WR);
 }
 
 int SocketBase::getFD() const { return sockfd; }
