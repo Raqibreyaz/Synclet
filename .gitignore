@@ -7,3 +7,4 @@ generateFiles
 *.o
 data
 output
+main

@@ -2,7 +2,6 @@
 #include <cstring>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <ranges>
 #include <unordered_map>
 #include <sys/inotify.h>
 #include "../include/utils.hpp"
@@ -15,16 +14,15 @@
 #define DATA_DIR "./data"
 #define SNAP_FILE "./snap-file.json"
 
-void func()
-{
-}
-
 int main()
 {
+    // initially server and client either will have snapshot to get an understanding of what to update on data
+
     // get prev and current snapshots
     auto curr_snap = scan_directory(DATA_DIR);
     auto prev_snap = curr_snap;
-    auto fileRenameTracker = std::unordered_map<int, FileRenamePayload>();
+
+    DirChanges &&dir_changes = compare_snapshots(curr_snap, prev_snap);
 
     // create connection to server
     TcpConnection client(SERVER_IP, std::to_string(PORT));
@@ -34,65 +32,80 @@ int main()
     json j = nullptr;
     Message msg;
 
+    auto message_sender = [&](const std::function<void(void)> &callback = nullptr)
+    {
+        if (!j || j.empty())
+            return;
+
+        to_json(j, msg);
+
+        const std::string message = j.dump();
+
+        // sending the len of json message
+        std::string json_len_string = convert_to_binary_string(message.size());
+        client.sendAll(json_len_string);
+
+        std::clog << "sending message to server: " << message << std::endl;
+        client.sendAll(message);
+
+        if (!callback)
+            callback();
+    };
+
+    auto data_sender = [&](FileIO &fileio, size_t offset, size_t chunk_size)
+    {
+        std::string chunk_string = fileio.read_file_from_offset(offset, chunk_size);
+
+        // send the message raw data
+        client.sendAll(chunk_string);
+
+        // now send EOF to stop waiting
+        client.shutdownWrite();
+    };
+
+    // contuously watch for changes to sync
     while (true)
     {
         auto events = watcher.poll_events();
 
         for (auto &event : events)
         {
-            const std::string filepath = std::string(DATA_DIR) + "/" + event->name;
-
-            std::clog << "filepath: " << filepath << std::endl;
+            const EventType event_type = event.event_type;
+            const std::string filepath = event.filepath.string();
+            const std::string filename = extract_filename_from_path(filepath);
 
             // when file is created or deleted then inform server
-            if ((event->mask & IN_CREATE) || (event->mask & IN_DELETE))
+            if (event_type == EventType::CREATED || event_type == EventType::DELETED)
             {
-                msg.type = (event->mask & IN_CREATE) ? Type::FILE_CREATE : Type::FILE_REMOVE;
-                msg.payload = FileCreateRemovePayload{.filename = event->name};
+                msg.type = event_type == EventType::CREATED ? Type::FILE_CREATE : Type::FILE_REMOVE;
+                msg.payload = FileCreateRemovePayload{
+                    .filename = filename};
 
-                to_json(j, msg);
-
-                const std::string message = j.dump();
-
-                std::clog << "sending message to server: " << message << std::endl;
-
-                client.sendAll(message);
+                message_sender();
             }
 
             // handle file rename case, inform server
-            else if ((event->mask & IN_MOVED_FROM) || (event->mask & IN_MOVED_TO))
+            else if (event_type == EventType::RENAMED)
             {
-                auto &file_rename = fileRenameTracker[event->cookie];
+                // skip the event if it is incomplete
+                if (!(event.new_filepath.has_value()) && !(event.old_filepath.has_value()))
+                    continue;
 
-                auto filename = event->name;
+                // create the message
+                msg.type = Type::FILE_RENAME;
+                msg.payload = FileRenamePayload{
+                    .old_filename = event.new_filepath.value().string(),
+                    .new_filename = event.old_filepath.value().string()};
 
-                if (event->mask & IN_MOVED_FROM)
-                    file_rename.old_filename = filename;
-                else
-                    file_rename.new_filename = filename;
-
-                // when both old and new filename got then inform server
-                if (!(file_rename.old_filename.empty()) && !(file_rename.new_filename.empty()))
-                {
-                    msg.type = Type::FILE_RENAME;
-                    msg.payload = file_rename;
-                    to_json(j, msg);
-
-                    std::string message = j.dump();
-                    std::clog << "sending message to server: " << message << std::endl;
-
-                    client.sendAll(j.dump());
-                }
+                message_sender();
             }
 
             // handle file modify case
             else
             {
-                std::clog << "file modified" << std::endl;
-
-                std::string filename = event->name;
-
-                FileSnapshot curr_file_snap = createSnapshot(filepath, fs::file_size(filepath), to_unix_timestamp(fs::last_write_time(filepath)));
+                FileSnapshot curr_file_snap = createSnapshot(filepath,
+                                                             fs::file_size(filepath),
+                                                             to_unix_timestamp(fs::last_write_time(filepath)));
 
                 FileSnapshot prev_file_snap = prev_snap[filename];
 
@@ -104,7 +117,6 @@ int main()
                 // modified chunks
                 for (int &chunk_no : file_modification.modified)
                 {
-
                     msg.type = Type::SEND_CHUNK;
                     msg.payload = SendChunkPayload{
                         .filename = filename,
@@ -115,36 +127,13 @@ int main()
                         .is_last_chunk = curr_file_snap.chunks.size() == static_cast<size_t>(chunk_no - 1),
                     };
 
-                    to_json(j, msg);
-                    std::string message = j.dump();
+                    // send the message
+                    message_sender();
 
-                    std::clog << "message length: " << message.size() << std::endl;
-
-                    // send the data size
-                    uint32_t json_len = htonl(static_cast<uint32_t>(message.size()));
-
-                    std::clog << "json len: " << json_len << std::endl;
-
-                    std::string json_len_string(reinterpret_cast<const char *>(&json_len), sizeof(json_len));
-
-                    std::clog << "sending json length " << json_len_string << std::endl;
-
-                    client.sendAll(json_len_string);
-
-                    std::clog << "sending message to server: " << message << std::endl;
-
-                    // send the message type and payload
-                    client.sendAll(message);
-
-                    std::string chunk_string = fileio.read_file_from_offset(curr_file_snap.chunks[chunk_no].offset, curr_file_snap.chunks[chunk_no].chunk_size);
-
-                    std::clog << "sending chunk of size: " << chunk_string.size() << std::endl;
-
-                    // send the message raw data
-                    client.sendAll(chunk_string);
-
-                    // now send EOF to stop waiting
-                    client.shutdownWrite();
+                    // now send the actual data
+                    data_sender(fileio,
+                                curr_file_snap.chunks[chunk_no].offset,
+                                curr_file_snap.chunks[chunk_no].chunk_size);
                 }
 
                 for (int &chunk_no : file_modification.removed)
@@ -159,23 +148,18 @@ int main()
                         .is_last_chunk = false,
                     };
 
-                    to_json(j, msg);
-                    std::string message = j.dump();
-                    std::clog << "sending message to client: " << message << std::endl;
-
-                    // send the size of the json
-                    uint32_t json_len = htonl(message.size());
-                    client.sendAll(std::string(reinterpret_cast<char *>(&json_len), sizeof(json_len)));
-
-                    // now send the json
-                    client.sendAll(message);
+                    // send the message
+                    message_sender();
 
                     // now send the actual raw data
-                    client.sendAll(fileio.read_file_from_offset(prev_file_snap.chunks[chunk_no].offset, prev_file_snap.chunks[chunk_no].chunk_size));
+                    data_sender(fileio,
+                                prev_file_snap.chunks[chunk_no].offset,
+                                prev_file_snap.chunks[chunk_no].chunk_size);
                 }
             }
         }
     }
+
     client.closeConnection();
 
     return 0;

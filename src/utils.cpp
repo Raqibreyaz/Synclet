@@ -314,3 +314,10 @@ std::string extract_filename_from_path(const std::string &path)
 
     return path.substr(last_slash + 1);
 }
+
+std::string convert_to_binary_string(size_t n)
+{
+    uint32_t big_endian_n = htonl(static_cast<uint32_t>(n));
+
+    return std::string(reinterpret_cast<const char *>(&big_endian_n), sizeof(big_endian_n));
+}

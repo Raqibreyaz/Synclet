@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <cstring>
 #include <unordered_map>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -9,8 +10,8 @@
 #include <format>
 #include <chrono>
 #include <openssl/sha.h>
-#include <iostream>
 #include <deque>
+#include <arpa/inet.h>
 #include "../include/message.hpp"
 
 namespace fs = std::filesystem;
@@ -52,3 +53,6 @@ std::unordered_map<std::string, FileSnapshot> load_snapshot(const std::string &f
 
 // returns the filename from the filepath
 std::string extract_filename_from_path(const std::string &path);
+
+// returns the binary encoded string of the number
+std::string convert_to_binary_string(size_t n);
