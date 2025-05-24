@@ -9,9 +9,17 @@ public:
 
     TcpConnection(const std::string &host, const std::string &port);
 
-    void connectToServer(const std::string &host, const std::string &port);
+    explicit TcpConnection(int fd); // from accept()
 
-    explicit TcpConnection(int fd) : SocketBase(fd) {} // from accept()
+    // removing copyable constructors
+    TcpConnection(const TcpConnection &) = delete;
+    TcpConnection &operator=(TcpConnection &) = delete;
+
+    // adding movable constructors
+    TcpConnection(TcpConnection &&other) noexcept;
+    TcpConnection &operator=(TcpConnection &&other) noexcept;
+
+    void connectToServer(const std::string &host, const std::string &port);
 };
 
 class TcpServer

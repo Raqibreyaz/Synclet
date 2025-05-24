@@ -7,6 +7,7 @@ FileIO::FileIO(const std::string &filepath)
     open_file(filepath);
 }
 
+// handle if file not exists then create condition
 bool FileIO::open_file(const std::string &filepath)
 {
     fstream.open(filepath, std::ios::in);
@@ -18,6 +19,10 @@ bool FileIO::open_file(const std::string &filepath)
     }
     return true;
 }
+
+// create handler of removing bytes after index j
+
+// create handler of replacing from index i to j with given data in a file
 
 std::string FileIO::read_file_from_offset(const size_t offset, const size_t chunk_size)
 {

@@ -22,8 +22,8 @@ public:
     std::filesystem::path filepath;
 
     // for handling rename logic
-    std::optional<std::filesystem::path> new_filepath;
     std::optional<std::filesystem::path> old_filepath;
+    std::optional<std::filesystem::path> new_filepath;
 
     EventType event_type;
     uint32_t cookie;
@@ -39,4 +39,4 @@ public:
               uint32_t cookie);
 };
 
-inline EventType getEventTypeFromMask(uint32_t mask);
+EventType getEventTypeFromMask(uint32_t mask);

@@ -16,8 +16,8 @@ public:
     ~Watcher();
 
 private:
-    #define BUFFER_SIZE 4096
-    #define RENAME_DELAY 200
+#define BUFFER_SIZE 4096
+#define RENAME_DELAY 200
 
     int infd;
     int wd;

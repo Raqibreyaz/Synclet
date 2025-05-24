@@ -20,6 +20,7 @@ CDC(content defined chunking)
 - chunks are created using (hash % N == 0), if this condition met for a window ✅
 - 2 important vars, N and window size ✅
 - chunks can be of ~N size but not ==N ✅
+- used hybrid approach of weak + strong hash where weak hash finds boundary and strong hash for saving actual hash of chunk
 
 - in case of just rename not deletion then instead of sending file, rename in the server too!! ✅
 - compare changes optimally ✅
@@ -32,6 +33,27 @@ CDC(content defined chunking)
 ✅
 
 - how the debouncing works here?
+
 - have to clean/filter unnecessary or duplicate events like:
 for same file MODIFY + DELETE then consider DELETE, for same file MODIFY + MODIFY + ... + MODIFY then consider the last one
 . one approach can be spawn a thread where main thread will take out events and side by side child thread will clean the events
+
+- optimise fileio class for removing/adding & modifying specific chunks
+given offset and chunk_size
+. remove bytes from j index to last, ftruncate!!
+. add chars from offset to offset+chunk_size-1
+. this can only be done via creating a temp file as doing these operations not possible for files
+. but have to optimise as if multiple chunks are to be sent then for each cunk a temp file will be created/destroyed so need to understand when to create/destroy temp file
+
+- add a class for handling different types of messages ✅
+
+- create the whole logic of server side to handle chunks writes, chunk deletes
+
+modification: ✅
+. old chunk offset + size to remove the chunk and new chunk's offset + size to extract from file and replace with.
+addition: ✅
+. take new chunk's offset + size to extract from file and append the data of new chunk
+deletion: ✅
+. take end index of the old chunk to truncate file
+. suppose 5 chunks removed so take the end index of the first removed chunk 
+- addition/deletion only one will exist at a time ✅

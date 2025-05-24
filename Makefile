@@ -8,14 +8,16 @@ CLIENT_SRCS := client/client.cpp \
 	src/tcp-socket.cpp \
 	src/utils.cpp \
 	src/file-io.cpp \
-	src/watcher.cpp
+	src/watcher.cpp \
+	src/file-event.cpp
 
 SERVER_SRCS := server/server.cpp \
 	src/message.cpp \
 	src/socket-base.cpp \
 	src/tcp-socket.cpp \
 	src/utils.cpp \
-	src/file-io.cpp
+	src/file-io.cpp \
+	src/file-event.cpp
 
 CLIENT_OBJS = $(CLIENT_SRCS:.cpp=.o)
 SERVER_OBJS = $(SERVER_SRCS:.cpp=.o)
