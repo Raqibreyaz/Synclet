@@ -45,7 +45,8 @@ given offset and chunk_size
 . this can only be done via creating a temp file as doing these operations not possible for files
 . but have to optimise as if multiple chunks are to be sent then for each cunk a temp file will be created/destroyed so need to understand when to create/destroy temp file
 
-- add a class for handling different types of messages ✅
+- add a class for handling different types of messages for client side✅
+- add a class for handling different types of message for server side 
 
 - create the whole logic of server side to handle chunks writes, chunk deletes
 
@@ -57,3 +58,44 @@ deletion: ✅
 . take end index of the old chunk to truncate file
 . suppose 5 chunks removed so take the end index of the first removed chunk 
 - addition/deletion only one will exist at a time ✅
+
+- initially any peer should know what to send/receive before watching for events as there can be changes when program was closed.
+- lets say some files were modifed, few were removed, few were created then how this info will be sent as we  have different message types for these (using SYNC_SESSION) 
+
+- how server should handle multiple modify chunks of same file 
+. by keeping a file pointer which opens a file and not closes till any other file's chunk come
+. but issue is when to detect that this is the last modify chunk received ✅ (added is_last_chunk prop)
+
+chunk:{               
+    offset,
+    chunk_size,
+    hash,
+    chunk_no
+}       
+what change can be tolerated-  
+. offset,
+. chunk_no
+
+what change is proper sign of modification-
+. hash
+. chunk_size(but will not consider for check, hash is reliable)
+
+prev_snap: C1, C2, C3, C4, C5, C6,
+curr_snap: C1', C2, C3, C4', C5
+C6=C5
+C4 & C5 changed and new C4' is there
+C3=C3
+C2=C2
+C1
+
+
+ek efficient data structure chaiye in operations ke liye- 
+dekh bro mujhe objects store krne hain with properties:
+    size_t offset;
+    size_t chunk_size;
+    std::string hash;
+    int chunk_no;
+second thing is, do we will have two version prev_snap &  curr_snap we have to compare both versions on basis of hash prop, will do these operations:
+. take prev_snap object and find using its hash that is there an object in curr_snap with this hash
+. take curr_snap object and find using its hash that is there an object in prev_snap with this hash
+. in both cases when prev_snap object not found in curr_snap then the chunk is modified/removed and when curr_snap object not found in prev_snap then chunk is added/modified

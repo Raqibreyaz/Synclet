@@ -65,6 +65,15 @@ void FileChangeHandler::handle_modify_file(const FileEvent &event, DirSnapshot &
     // open the file for IO
     FileIO fileio(filepath);
 
+    // removed chunks
+    for (TruncateFilePayload &removed_chunk : file_modification.removed)
+    {
+        msg.type = MessageType::REMOVED_CHUNK;
+        msg.payload = std::move(removed_chunk);
+
+        messenger.send_json_message(msg);
+    }
+
     // modified chunks
     for (ModifiedChunkPayload &modified_chunk : file_modification.modified)
     {
@@ -89,14 +98,5 @@ void FileChangeHandler::handle_modify_file(const FileEvent &event, DirSnapshot &
 
         messenger.send_json_message(msg);
         messenger.send_file_data(fileio, offset, chunk_size);
-    }
-
-    // removed chunks
-    for (TruncateFilePayload &removed_chunk : file_modification.removed)
-    {
-        msg.type = MessageType::REMOVED_CHUNK;
-        msg.payload = std::move(removed_chunk);
-
-        messenger.send_json_message(msg);
     }
 }

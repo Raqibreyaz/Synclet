@@ -30,11 +30,11 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
     std::ifstream file(file_path, std::ios::binary);
 
     if (!file)
-        throw std::runtime_error(std::format("{} {}", "failed to open file", file_path));
+        throw std::runtime_error(std::format("{} {}", std::string("failed to open file"), file_path));
 
     size_t last_slash = file_path.find_last_of('/');
     if (last_slash == std::string::npos)
-        last_slash = 0;
+        last_slash = -1;
 
     // create a snapshot of the file
     FileSnapshot snapshot(file_path.substr(last_slash + 1), file_size, last_write_time, {});
@@ -194,10 +194,16 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
             modified_chunk.new_end_index = chunk_a.offset + chunk_a.chunk_size - 1,
             modified_chunk.old_start_index = chunk_b.offset,
             modified_chunk.old_end_index = chunk_b.offset + chunk_b.chunk_size - 1,
+            modified_chunk.is_last_chunk = false;
 
             changes.modified.emplace_back(std::move(modified_chunk));
         }
     }
+
+    // create last chunk
+    size_t last_index = changes.modified.size();
+    if (last_index > 0)
+        changes.modified[last_index - 1].is_last_chunk = true;
 
     // for new chunks add the start and end index of current snap
     for (; i < file_curr_snap.chunks.size(); ++i)
@@ -205,23 +211,30 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
         const ChunkInfo &chunk = file_curr_snap.chunks[i];
         AddChunkPayload new_chunk{.filename = file_curr_snap.filename,
                                   .new_start_index = chunk.offset,
-                                  .new_end_index = chunk.offset + chunk.chunk_size - 1};
+                                  .new_end_index = chunk.offset + chunk.chunk_size - 1,
+                                  .is_last_chunk = false};
 
-        changes.modified.emplace_back(std::move(new_chunk));
+        changes.added.emplace_back(std::move(new_chunk));
     }
 
-    // for removed chunks
+    // create last chunk
+    last_index = changes.added.size();
+    if (last_index > 0)
+        changes.added[last_index-1].is_last_chunk = true;
 
-    size_t last_index = SIZE_MAX;
+    // for removed chunks
+    last_index = SIZE_MAX;
     bool is_removed = false;
     for (; i < file_prev_snap.chunks.size(); ++i)
     {
-        last_index = std::min(last_index, file_prev_snap.chunks[i].offset);
+        last_index = std::min(static_cast<size_t>(last_index), file_prev_snap.chunks[i].offset);
         is_removed = true;
     }
 
     if (is_removed)
-        changes.removed.emplace_back(TruncateFilePayload{.filename = file_prev_snap.filename, .last_index = last_index});
+        changes.removed.emplace_back(TruncateFilePayload{
+            .filename = file_prev_snap.filename,
+            .last_index = static_cast<size_t>(last_index)});
 
     return changes;
 }
@@ -253,7 +266,7 @@ void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
     std::ofstream file(snap_file_path, std::ios::out);
 
     if (!file)
-        throw std::runtime_error(std::format("failed to save snapshot to {}",snap_file_path));
+        throw std::runtime_error(std::format("failed to save snapshot to {}", snap_file_path.string()));
 
     file << j.dump(4);
     file.close();

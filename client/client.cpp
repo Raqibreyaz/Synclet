@@ -4,6 +4,7 @@
 #include <arpa/inet.h>
 #include <unordered_map>
 #include <sys/inotify.h>
+#include <sys/signal.h>
 #include "../include/tcp-socket.hpp"
 #include "../include/file-io.hpp"
 #include "../include/watcher.hpp"
@@ -17,6 +18,13 @@
 #define DATA_DIR "./data"
 #define SNAP_FILE "./snap-file.json"
 
+std::function<void()> signal_handler = nullptr;
+void signal_handler_wrap(int sig)
+{
+    if (signal_handler)
+        signal_handler();
+}
+
 int main()
 {
     // initially server and client either will have snapshot to get an understanding of what to update on data
@@ -25,7 +33,7 @@ int main()
 
     // get prev and current snapshots
     auto curr_snap = snap_manager.scan_directory();
-    auto prev_snap = curr_snap;
+    auto prev_snap = snap_manager.load_snapshot();
 
     DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, prev_snap);
 
@@ -42,6 +50,14 @@ int main()
 
     json j;
     Message msg;
+
+    signal_handler = [&client]()
+    {
+        client.closeConnection();
+        exit(EXIT_SUCCESS);
+    };
+
+    signal(SIGINT, signal_handler_wrap);
 
     // continuously watch for changes to sync
     while (true)

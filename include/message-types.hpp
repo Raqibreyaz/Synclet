@@ -68,6 +68,7 @@ struct AddChunkPayload
     std::string filename;
     size_t new_start_index;
     size_t new_end_index;
+    bool is_last_chunk;
 };
 
 struct ModifiedChunkPayload : public AddChunkPayload

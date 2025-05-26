@@ -1,16 +1,15 @@
 #include "../include/file-io.hpp"
 
-FileIO::FileIO() : fstream(nullptr) {};
-
-FileIO::FileIO(const std::string &filepath)
+FileIO::FileIO(const std::string &filepath, std::ios::openmode mode)
 {
-    open_file(filepath);
+    open_file(filepath, mode);
 }
 
-// handle if file not exists then create condition
-bool FileIO::open_file(const std::string &filepath)
+bool FileIO::open_file(const std::string &filepath, std::ios::openmode mode)
 {
-    fstream.open(filepath, std::ios::in);
+    this->filepath = filepath;
+
+    fstream.open(filepath, mode | std::ios::binary);
 
     if (!fstream)
     {
@@ -20,12 +19,17 @@ bool FileIO::open_file(const std::string &filepath)
     return true;
 }
 
-// create handler of removing bytes after index j
-
-// create handler of replacing from index i to j with given data in a file
+void FileIO::close_file()
+{
+    if (fstream.is_open())
+        fstream.close();
+}
 
 std::string FileIO::read_file_from_offset(const size_t offset, const size_t chunk_size)
 {
+    if (!fstream || !(fstream.is_open()))
+        throw std::runtime_error("file need to be opened for reading!");
+
     std::string chunk_string(chunk_size, '\0');
 
     // point to the required offset
@@ -42,10 +46,33 @@ std::string FileIO::read_file(const size_t n)
     return read_file_from_offset(0, n);
 }
 
-void FileIO::close_file()
+// write at a particular offset in a file
+void FileIO::write_file_at_offset(const size_t offset, const std::string &data)
 {
-    if (fstream.is_open())
-        fstream.close();
+    if (!fstream || !(fstream.is_open()))
+        throw std::runtime_error("file need to be opened for writing!");
+
+    fstream.seekp(offset);
+    fstream.write(data.c_str(), data.size());
+}
+
+// write the chunk at last of file
+void FileIO::append_chunk(const std::string &data)
+{
+    if (!fstream || !(fstream.is_open()))
+        throw std::runtime_error("file need to be opened for appending!");
+
+    fstream.write(data.c_str(), data.size());
+}
+
+std::string FileIO::get_filepath()
+{
+    return this->filepath;
+}
+
+uintmax_t FileIO::get_file_size()
+{
+    return fs::file_size(filepath);
 }
 
 FileIO::~FileIO()
