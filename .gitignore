@@ -6,3 +6,8 @@ synclet
 generateFiles
 *.o
 data
+output
+main
+learning_cmake.md
+
+

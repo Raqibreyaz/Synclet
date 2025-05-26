@@ -1,24 +1,26 @@
 {
-    "configurations": [
-        {
-            "name": "Linux",
-            "includePath": [
-                "${workspaceFolder}/**",
-                "/home/raquib/vcpkg/installed/x64-linux/include"
-            ],
-            "defines": [],
-            "compilerPath": "/usr/bin/g++-14",
-            "intelliSenseMode": "linux-gcc-x64",
-            "cppStandard": "c++23",
-            "cStandard": "c11",
-            "browse": {
-                "path": [
-                    "/usr/include",
-                    "/usr/include/c++",
-                    "/usr/include/x86_64-linux-gnu"
-                ]
-            }
-        }
-    ],
-    "version": 4
+  "configurations": [
+    {
+      "name": "Linux",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "/home/raquib/vcpkg/installed/x64-linux/include"
+      ],
+      "defines": [],
+      "compilerPath": "/usr/bin/g++",
+      "intelliSenseMode": "linux-gcc-x64",
+      "cppStandard": "c++23",
+      "cStandard": "c11",
+      "browse": {
+        "limitSymbolsToIncludedHeaders": true,
+        "path": [
+          "/usr/include",
+          "/usr/include/c++",
+          "/usr/include/x86_64-linux-gnu",
+          "${workspaceFolder}/**"
+        ]
+      }
+    }
+  ],
+  "version": 4
 }

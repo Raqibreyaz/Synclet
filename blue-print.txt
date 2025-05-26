@@ -1,0 +1,75 @@
+TYPE: SEND_CHUNK
+PAYLOAD:{
+    filename;
+    chunk_no;
+    chunk_size;
+    offset;
+}
+
+TYPE: MODIFIED_CHUNK
+PAYLOAD:{
+    filename;
+    new_start_index;
+    new_end_index;
+    old_start_index;
+    old_end_index;
+}
+
+TYPE: ADDED_CHUNK
+PAYLOAD:{
+    filename;
+    new_start_index;
+    new_end_index;
+}
+
+TYPE: REMOVED_CHUNK
+PAYLOAD:{
+
+    filename;
+    last_index;
+}
+
+TYPE: FILE_CREATE
+PAYLOAD:{
+    filename
+}
+
+TYPE: FILE_RENAME
+PAYLOAD:{
+    old_filename;
+    new_filename;
+}
+
+TYPE: FILE_REMOVE
+PAYLOAD:{
+    filename;
+}
+
+TYPE: SYNC_SESSION
+PAYLOAD: {
+    created_files: [ ... ],
+    renamed_files: [ ... ],
+    removed_files: [ ... ],
+    modified_files: [
+        {
+            filename: "abc.txt",
+            changes: [
+                { type: "MODIFIED_CHUNK", ... },
+                { type: "ADDED_CHUNK", ... },
+                ...
+            ]
+        },
+        ...
+    ]
+}
+
+chunks:[
+    {offset: 10,size:10}
+    {offset: 30,size:40}
+    {offset: 100,size:50}
+]
+. create temp file
+. copy 0-9 from original then write chunk[0]
+. copy 20-29 from original then write chunk[1]
+. copy 70-99 from original then write chunk[2]
+. copy all the data from offset 150

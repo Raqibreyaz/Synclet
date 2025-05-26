@@ -1,6 +1,6 @@
 # Synclet
 
-Synclet is a C++ module for efficient file synchronization. It tracks and syncs only the changed parts (chunks) of files, minimizing data transfer. Inspired by Git's delta-based sync, Synclet is designed for projects where bandwidth and speed are critical.
+Synclet is a C++ project for efficient file synchronization. It tracks and syncs only the changed parts (chunks) of files, minimizing data transfer. Inspired by Git's delta-based sync, Synclet is designed for projects where bandwidth and speed are critical.
 
 ## Features
 
