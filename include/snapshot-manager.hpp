@@ -20,10 +20,9 @@ using DirSnapshot = std::unordered_map<std::string, FileSnapshot>;
 
 struct FileModification
 {
-    std::string filename;
-    std::vector<AddChunkPayload> added;
+    std::vector<AddRemoveChunkPayload> added;
     std::vector<ModifiedChunkPayload> modified;
-    std::vector<TruncateFilePayload> removed;
+    std::vector<AddRemoveChunkPayload> removed;
 };
 
 struct DirChanges

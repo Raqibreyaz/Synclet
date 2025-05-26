@@ -60,43 +60,61 @@ void FileChangeHandler::handle_modify_file(const FileEvent &event, DirSnapshot &
 
     FileSnapshot prev_file_snap = prev_snap[filename];
 
+    // will return changes in sorted order means every array(added,modified,removed all will be sorted)
     FileModification file_modification = SnapshotManager::get_file_modification(curr_file_snap, prev_file_snap);
 
     // open the file for IO
     FileIO fileio(filepath);
 
-    // removed chunks
-    for (TruncateFilePayload &removed_chunk : file_modification.removed)
+    size_t total_modified = file_modification.modified.size();
+    size_t total_added = file_modification.added.size();
+    size_t total_removed = file_modification.removed.size();
+
+    // now we have to send changes sorted by their offset
+    for (size_t i = 0, j = 0, k = 0;
+         i < total_added || j < total_removed || k < total_modified;)
     {
-        msg.type = MessageType::REMOVED_CHUNK;
-        msg.payload = std::move(removed_chunk);
+        AddRemoveChunkPayload added_chunk;
+        AddRemoveChunkPayload removed_chunk;
+        ModifiedChunkPayload modified_chunk;
 
-        messenger.send_json_message(msg);
-    }
+        if (i < total_added)
+            added_chunk = file_modification.added[i];
+        if (j < total_removed)
+            removed_chunk = file_modification.removed[j];
+        if (k < total_modified)
+            modified_chunk = file_modification.modified[k];
 
-    // modified chunks
-    for (ModifiedChunkPayload &modified_chunk : file_modification.modified)
-    {
-        size_t offset = modified_chunk.new_start_index;
-        size_t chunk_size = modified_chunk.old_end_index - offset + 1;
+            // check if really using min_offset works
+        size_t min_offset = std::min(added_chunk.offset, std::min(removed_chunk.offset, modified_chunk.offset));
 
-        msg.type = MessageType::MODIFIED_CHUNK;
-        msg.payload = std::move(modified_chunk);
+        if (min_offset == added_chunk.offset)
+        {
+            size_t chunk_size = added_chunk.chunk_size;
+            msg.type = MessageType::ADDED_CHUNK;
+            msg.payload = std::move(added_chunk);
 
-        messenger.send_json_message(msg);
-        messenger.send_file_data(fileio, offset, chunk_size);
-    }
+            messenger.send_json_message(msg);
+            messenger.send_file_data(fileio, min_offset, chunk_size);
+            ++i;
+        }
+        if (min_offset == removed_chunk.offset)
+        {
+            msg.type = MessageType::REMOVED_CHUNK;
+            msg.payload = std::move(removed_chunk);
 
-    // new chunks
-    for (AddChunkPayload &added_chunk : file_modification.added)
-    {
-        size_t offset = added_chunk.new_start_index;
-        size_t chunk_size = added_chunk.new_end_index - offset + 1;
+            messenger.send_json_message(msg);
+            ++j;
+        }
+        if (min_offset == modified_chunk.offset)
+        {
+            size_t chunk_size = added_chunk.chunk_size;
+            msg.type = MessageType::MODIFIED_CHUNK;
+            msg.payload = std::move(modified_chunk);
 
-        msg.type = MessageType::ADDED_CHUNK;
-        msg.payload = std::move(added_chunk);
-
-        messenger.send_json_message(msg);
-        messenger.send_file_data(fileio, offset, chunk_size);
+            messenger.send_json_message(msg);
+            messenger.send_file_data(fileio, min_offset, chunk_size);
+            ++k;
+        }
     }
 }

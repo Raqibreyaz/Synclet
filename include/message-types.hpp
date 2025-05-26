@@ -11,7 +11,6 @@ using json = nlohmann::json;
 // the type of the payload
 enum class MessageType
 {
-    SEND_CHUNK,
     MODIFIED_CHUNK,
     ADDED_CHUNK,
     REMOVED_CHUNK,
@@ -37,10 +36,10 @@ struct FileSnapshot
     std::string filename;
     uint64_t file_size;
     std::time_t mtime;
-    std::vector<ChunkInfo> chunks;
+    std::unordered_map<std::string, ChunkInfo> chunks;
 
     FileSnapshot();
-    FileSnapshot(const std::string &filename, const uint64_t &file_size, const std::time_t &mtime, const std::vector<ChunkInfo> &chunks);
+    FileSnapshot(const std::string &filename, const uint64_t &file_size, const std::time_t &mtime, const std::unordered_map<std::string,ChunkInfo> &chunks);
 };
 
 struct FileCreateRemovePayload
@@ -54,31 +53,19 @@ struct FileRenamePayload
     std::string new_filename;
 };
 
-// payload when sending a chunk data
-struct SendChunkPayload
+struct AddRemoveChunkPayload
 {
     std::string filename;
-    int chunk_no;
-    size_t chunk_size;
     size_t offset;
-};
-
-struct AddChunkPayload
-{
-    std::string filename;
-    size_t new_start_index;
-    size_t new_end_index;
+    size_t chunk_size;
     bool is_last_chunk;
+    AddRemoveChunkPayload();
+    AddRemoveChunkPayload(const std::string& filename,const size_t offset,const size_t chunk_size,const bool is_last_chunk);
 };
 
-struct ModifiedChunkPayload : public AddChunkPayload
+struct ModifiedChunkPayload : public AddRemoveChunkPayload
 {
-    size_t old_start_index;
-    size_t old_end_index;
-};
-
-struct TruncateFilePayload
-{
-    std::string filename;
-    size_t last_index;
+    size_t old_chunk_size;
+    ModifiedChunkPayload();
+    ModifiedChunkPayload(const std::string& filename,const size_t offset,const size_t chunk_size,const size_t old_chunk_size,const bool is_last_chunk);
 };

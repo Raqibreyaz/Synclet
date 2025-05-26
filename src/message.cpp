@@ -5,8 +5,6 @@ std::string message_type_to_string(MessageType type)
 {
     switch (type)
     {
-    case MessageType::SEND_CHUNK:
-        return "SEND_CHUNK";
     case MessageType::FILE_CREATE:
         return "FILE_CREATE";
     case MessageType::FILE_REMOVE:
@@ -28,9 +26,7 @@ std::string message_type_to_string(MessageType type)
 // converts the string message type to original type
 MessageType message_type_from_string(const std::string &type)
 {
-    if (type == "SEND_CHUNK")
-        return MessageType::SEND_CHUNK;
-    else if (type == "MODIFIED_CHUNK")
+    if (type == "MODIFIED_CHUNK")
         return MessageType::MODIFIED_CHUNK;
     else if (type == "REMOVED_CHUNK")
         return MessageType::REMOVED_CHUNK;
@@ -89,9 +85,9 @@ void from_json(const json &j, Message &m)
     else if (m.type == MessageType::MODIFIED_CHUNK)
         m.payload = payload_json.get<ModifiedChunkPayload>();
     else if (m.type == MessageType::REMOVED_CHUNK)
-        m.payload = payload_json.get<TruncateFilePayload>();
+        m.payload = payload_json.get<AddRemoveChunkPayload>();
     else if (m.type == MessageType::ADDED_CHUNK)
-        m.payload = payload_json.get<AddChunkPayload>();
+        m.payload = payload_json.get<AddRemoveChunkPayload>();
     else
         m.payload = std::monostate{};
 }

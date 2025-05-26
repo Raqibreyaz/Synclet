@@ -90,7 +90,10 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
         // when a chunk boundary found then process it
         if (window.size() >= static_cast<size_t>(w_size) && hash % n == 0)
         {
-            snapshot.chunks.emplace_back(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
+
+            auto &&chunk_object = ChunkInfo(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
+
+            snapshot.chunks[chunk_object.hash] = std::move(chunk_object);
 
             // move to next chunk
             chunk_start += chunk.size();
@@ -102,7 +105,10 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
     };
 
     if (!chunk.empty())
-        snapshot.chunks.emplace_back(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
+    {
+        auto &&chunk_object = ChunkInfo(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
+        snapshot.chunks[chunk_object.hash] = std::move(chunk_object);
+    }
 
     return snapshot;
 }
@@ -119,7 +125,7 @@ DirSnapshot SnapshotManager::scan_directory()
             continue;
 
         // full path required for opening file
-        FileSnapshot snapshot = createSnapshot(entry.path().string());
+        FileSnapshot &&snapshot = createSnapshot(entry.path().string());
 
         // store the snapshot
         snapshots[extract_filename_from_path(entry.path().string())] = std::move(snapshot);
@@ -169,72 +175,86 @@ DirChanges SnapshotManager::compare_snapshots(
     return changes;
 }
 
-// compare curr and prev snap of the file(using only hash) and get changes as modified, removed chunks
+// compare curr and prev snap of the file(using only hash) and get changes as modified, added, removed chunks
 FileModification SnapshotManager::get_file_modification(const FileSnapshot &file_curr_snap, const FileSnapshot &file_prev_snap)
 {
+    FileModification changes{
+        .added = {},
+        .modified = {},
+        .removed = {}};
 
-    FileModification changes{.filename = file_curr_snap.filename,
-                             .added = {},
-                             .modified = {},
-                             .removed = {}};
+    std::unordered_map<uint64_t, ChunkInfo> prev_offset_map;
+    std::unordered_map<uint64_t, ChunkInfo> curr_offset_map;
 
-    // for modified chunks
-    size_t i;
-    for (i = 0; i < std::min(file_curr_snap.chunks.size(), file_prev_snap.chunks.size()); ++i)
+    for (auto &[_, chunk] : file_prev_snap.chunks)
+        prev_offset_map[chunk.offset] = chunk;
+
+    for (auto &[_, chunk] : file_curr_snap.chunks)
+        curr_offset_map[chunk.offset] = chunk;
+
+    // check for removed chunks
+    for (auto &[chunk_hash, chunk] : file_prev_snap.chunks)
     {
-        const ChunkInfo &chunk_a = file_curr_snap.chunks[i];
-        const ChunkInfo &chunk_b = file_prev_snap.chunks[i];
-
-        // for modified chunks add the start and end index of prev snap
-        if (chunk_a.hash != chunk_b.hash)
+        if (!(file_curr_snap.chunks.contains(chunk_hash)) &&
+            !(curr_offset_map.contains(chunk.offset)))
         {
-            ModifiedChunkPayload modified_chunk;
-            modified_chunk.filename = file_prev_snap.filename,
-            modified_chunk.new_start_index = chunk_a.offset,
-            modified_chunk.new_end_index = chunk_a.offset + chunk_a.chunk_size - 1,
-            modified_chunk.old_start_index = chunk_b.offset,
-            modified_chunk.old_end_index = chunk_b.offset + chunk_b.chunk_size - 1,
-            modified_chunk.is_last_chunk = false;
+            AddRemoveChunkPayload removed_chunk(
+                file_prev_snap.filename,
+                chunk.offset,
+                chunk.chunk_size,
+                false);
 
-            changes.modified.emplace_back(std::move(modified_chunk));
+            changes.removed.push_back(std::move(removed_chunk));
         }
     }
 
-    // create last chunk
-    size_t last_index = changes.modified.size();
-    if (last_index > 0)
-        changes.modified[last_index - 1].is_last_chunk = true;
-
-    // for new chunks add the start and end index of current snap
-    for (; i < file_curr_snap.chunks.size(); ++i)
+    // check for added chunks
+    for (auto &[chunk_hash, chunk] : file_curr_snap.chunks)
     {
-        const ChunkInfo &chunk = file_curr_snap.chunks[i];
-        AddChunkPayload new_chunk{.filename = file_curr_snap.filename,
-                                  .new_start_index = chunk.offset,
-                                  .new_end_index = chunk.offset + chunk.chunk_size - 1,
-                                  .is_last_chunk = false};
+        if (!(file_prev_snap.chunks.contains(chunk_hash)) &&
+            !(prev_offset_map.contains(chunk.offset)))
+        {
+            AddRemoveChunkPayload added_chunk(file_curr_snap.filename,
+                                              chunk.offset,
+                                              chunk.chunk_size,
+                                              false);
 
-        changes.added.emplace_back(std::move(new_chunk));
+            changes.added.push_back(std::move(added_chunk));
+        }
     }
 
-    // create last chunk
-    last_index = changes.added.size();
-    if (last_index > 0)
-        changes.added[last_index-1].is_last_chunk = true;
-
-    // for removed chunks
-    last_index = SIZE_MAX;
-    bool is_removed = false;
-    for (; i < file_prev_snap.chunks.size(); ++i)
+    // check for modified chunks
+    for (auto &[offset, chunk] : curr_offset_map)
     {
-        last_index = std::min(static_cast<size_t>(last_index), file_prev_snap.chunks[i].offset);
-        is_removed = true;
+        auto prev_offset_it = prev_offset_map.find(offset);
+
+        if (prev_offset_it == prev_offset_map.end())
+            continue;
+
+        ModifiedChunkPayload modified_chunk(file_curr_snap.filename, offset, chunk.chunk_size, prev_offset_it->second.chunk_size, false);
+
+        changes.modified.push_back(std::move(modified_chunk));
     }
 
-    if (is_removed)
-        changes.removed.emplace_back(TruncateFilePayload{
-            .filename = file_prev_snap.filename,
-            .last_index = static_cast<size_t>(last_index)});
+    std::sort(changes.added, [](const auto &chunk_a, const auto &chunk_b)
+              { return chunk_a.offset < chunk_b.offset; });
+
+    std::sort(changes.modified, [](const auto &chunk_a, const auto &chunk_b)
+              { return chunk_a.offset < chunk_b.offset; });
+
+    std::sort(changes.removed, [](const auto &chunk_a, const auto &chunk_b)
+              { return chunk_a.offset < chunk_b.offset; });
+
+    // add valid last_chunk boolean to only one in added,modified,removed which actually appears at last
+    size_t size = changes.removed.size();
+    if (size > 0)
+        changes.removed[size - 1].is_last_chunk = true;
+    size = changes.added.size();
+    if (size > 0)
+        changes.added[size - 1].is_last_chunk = true;
+    size = changes.modified.size();
+    if (size > 0)
+        changes.modified[size - 1].is_last_chunk = true;
 
     return changes;
 }
@@ -252,7 +272,7 @@ void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
         file_json["mtime"] = snap.mtime;
         file_json["chunks"] = json::array();
 
-        for (const auto &chunk : snap.chunks)
+        for (const auto &[_, chunk] : snap.chunks)
         {
             file_json["chunks"]
                 .push_back({{"offset", chunk.offset},
@@ -300,7 +320,7 @@ DirSnapshot SnapshotManager::load_snapshot()
         const uint64_t file_size = file_json["size"].get<uint64_t>();
         const std::time_t mtime = file_json["mtime"].get<std::time_t>();
 
-        std::vector<ChunkInfo> chunks;
+        std::unordered_map<std::string, ChunkInfo> chunks;
 
         for (const auto &chunk_json : file_json["chunks"])
         {
@@ -310,7 +330,7 @@ DirSnapshot SnapshotManager::load_snapshot()
             chunk.hash = chunk_json["hash"].get<std::string>();
             chunk.chunk_no = chunk_json["chunk_no"].get<int>();
 
-            chunks.push_back(std::move(chunk));
+            chunks[chunk.hash] = std::move(chunk);
         }
 
         snapshots[filename] = FileSnapshot(filename, file_size, mtime, chunks);
