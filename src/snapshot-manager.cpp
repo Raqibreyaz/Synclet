@@ -186,17 +186,28 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
     std::unordered_map<uint64_t, ChunkInfo> prev_offset_map;
     std::unordered_map<uint64_t, ChunkInfo> curr_offset_map;
 
+    // create entries of offset for prev_snap
     for (auto &[_, chunk] : file_prev_snap.chunks)
         prev_offset_map[chunk.offset] = chunk;
 
+    // create entries of offset for curr_snap
     for (auto &[_, chunk] : file_curr_snap.chunks)
         curr_offset_map[chunk.offset] = chunk;
 
     // check for removed chunks
     for (auto &[chunk_hash, chunk] : file_prev_snap.chunks)
     {
-        if (!(file_curr_snap.chunks.contains(chunk_hash)) &&
-            !(curr_offset_map.contains(chunk.offset)))
+        const bool is_chunk_present = file_curr_snap.chunks.contains(chunk_hash);
+        std::unordered_map<uint64_t, ChunkInfo>::iterator offset_chunk_it;
+
+        // check if the offset is present when the chunk is not present
+        if (!is_chunk_present)
+            offset_chunk_it = curr_offset_map.find(chunk.offset);
+
+        // when the chunk present in current snap or offset of the chunk is present and prev_chunks not contains the offset_chunk then skip it basically we are neglecting already present or modified changes as we want only removed chunks
+        if (!is_chunk_present &&
+            (offset_chunk_it == curr_offset_map.end() ||
+             file_prev_snap.chunks.contains(offset_chunk_it->second.hash)))
         {
             AddRemoveChunkPayload removed_chunk(
                 file_prev_snap.filename,
@@ -211,8 +222,17 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
     // check for added chunks
     for (auto &[chunk_hash, chunk] : file_curr_snap.chunks)
     {
-        if (!(file_prev_snap.chunks.contains(chunk_hash)) &&
-            !(prev_offset_map.contains(chunk.offset)))
+        const bool is_chunk_present = file_prev_snap.chunks.contains(chunk_hash);
+        std::unordered_map<uint64_t, ChunkInfo>::iterator offset_chunk_it;
+
+        // check if the offset is present when the chunk is not present
+        if (!is_chunk_present)
+            offset_chunk_it = prev_offset_map.find(chunk.offset);
+
+        // skip the chunk if it present previously or that corresponding offset contains a chunk which is not present currently as we are neglecting the chunks which were already present or are modified
+        if (!is_chunk_present &&
+            (offset_chunk_it == prev_offset_map.end() ||
+             file_curr_snap.chunks.contains(offset_chunk_it->second.hash)))
         {
             AddRemoveChunkPayload added_chunk(file_curr_snap.filename,
                                               chunk.offset,
@@ -228,33 +248,53 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
     {
         auto prev_offset_it = prev_offset_map.find(offset);
 
-        if (prev_offset_it == prev_offset_map.end())
-            continue;
+        // when offset not found or data is not modified or the chunk is present at another offset or prev_chunk is present at another offset then skip
+        if (prev_offset_it != prev_offset_map.end() &&
+            prev_offset_it->second.hash != chunk.hash &&
+            !(file_prev_snap.chunks.contains(chunk.hash)) &&
+            !(file_curr_snap.chunks.contains(prev_offset_it->second.hash)))
+        {
+            ModifiedChunkPayload modified_chunk(file_curr_snap.filename, offset, chunk.chunk_size, prev_offset_it->second.chunk_size, false);
 
-        ModifiedChunkPayload modified_chunk(file_curr_snap.filename, offset, chunk.chunk_size, prev_offset_it->second.chunk_size, false);
-
-        changes.modified.push_back(std::move(modified_chunk));
+            changes.modified.push_back(std::move(modified_chunk));
+        }
     }
 
-    std::sort(changes.added, [](const auto &chunk_a, const auto &chunk_b)
-              { return chunk_a.offset < chunk_b.offset; });
+    const auto offset_sort = [](const auto &a, const auto &b) -> bool
+    {
+        return a.offset < b.offset;
+    };
+    // see before sorting
+    std::sort(changes.added.begin(),
+              changes.added.end(),
+              offset_sort);
 
-    std::sort(changes.modified, [](const auto &chunk_a, const auto &chunk_b)
-              { return chunk_a.offset < chunk_b.offset; });
+    std::sort(changes.modified.begin(),
+              changes.modified.end(),
+              offset_sort);
 
-    std::sort(changes.removed, [](const auto &chunk_a, const auto &chunk_b)
-              { return chunk_a.offset < chunk_b.offset; });
+    std::sort(changes.removed.begin(),
+              changes.removed.end(),
+              offset_sort);
+    // see after sorting
+    const auto get_last_offset = [](const auto &vec) -> uint64_t
+    {
+        return vec.empty() ? 0 : vec.back().offset;
+    };
 
-    // add valid last_chunk boolean to only one in added,modified,removed which actually appears at last
-    size_t size = changes.removed.size();
-    if (size > 0)
-        changes.removed[size - 1].is_last_chunk = true;
-    size = changes.added.size();
-    if (size > 0)
-        changes.added[size - 1].is_last_chunk = true;
-    size = changes.modified.size();
-    if (size > 0)
-        changes.modified[size - 1].is_last_chunk = true;
+    size_t max_offset = std::max({get_last_offset(changes.added),
+                                  get_last_offset(changes.removed),
+                                  get_last_offset(changes.modified)});
+
+    // mark last chunk which has max_offset of the file
+    const auto mark_last = [&](auto &vec)
+    {
+        if (!(vec.empty()) && vec.back().offset == max_offset)
+            vec.back().is_last_chunk = true;
+    };
+    mark_last(changes.added);
+    mark_last(changes.modified);
+    mark_last(changes.removed);
 
     return changes;
 }

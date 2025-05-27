@@ -30,6 +30,10 @@ std::string FileIO::read_file_from_offset(const size_t offset, const size_t chun
     if (!fstream || !(fstream.is_open()))
         throw std::runtime_error("file need to be opened for reading!");
 
+    // return empty data when file size <= offset
+    if (get_file_size() <= static_cast<uintmax_t>(offset))
+        return "";
+
     std::string chunk_string(chunk_size, '\0');
 
     // point to the required offset

@@ -55,12 +55,15 @@ std::vector<FileEvent> Watcher::poll_events()
         auto now = std::chrono::steady_clock::now();
 
         // handle rename and expred rename timers
-        for (auto rename_it = file_rename_tracker.begin(); rename_it != file_rename_tracker.end(); rename_it++)
+        auto rename_it = file_rename_tracker.begin();
+        while (rename_it != file_rename_tracker.end())
         {
             const std::string old_filepath = rename_it->second.old_filepath;
             const std::string new_filepath = rename_it->second.new_filepath;
             const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - rename_it->second.timestamp);
             bool is_rename_taken = false;
+
+            std::clog << duration.count() << "ms passed" << std::endl;
 
             // when both exists then push the rename event
             if (!(old_filepath.empty()) && !(new_filepath.empty()))
@@ -84,10 +87,12 @@ std::vector<FileEvent> Watcher::poll_events()
             }
 
             if (is_rename_taken)
-                file_rename_tracker.erase(rename_it);
+                 rename_it = file_rename_tracker.erase(rename_it);
+            else
+                rename_it++;
         }
 
-        // when the event is CREATE || DELETE || MODIFIED 
+        // when the event is CREATE || DELETE || MODIFIED
         if (event_type != EventType::RENAMED)
             events.emplace_back(filepath, event_type, event->cookie);
     }

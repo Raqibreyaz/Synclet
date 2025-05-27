@@ -32,6 +32,9 @@ void Messenger::send_json_message(const Message &msg)
 
     // sending the json message
     client.sendAll(message);
+
+    if (msg.type != MessageType::ADDED_CHUNK && msg.type != MessageType::MODIFIED_CHUNK)
+        client.shutdownWrite();
 }
 
 Message Messenger::receive_json_message()

@@ -45,8 +45,8 @@ void FileChangeHandler::handle_rename_file(const FileEvent &event)
     // create the message
     msg.type = MessageType::FILE_RENAME;
     msg.payload = FileRenamePayload{
-        .old_filename = event.new_filepath.value().string(),
-        .new_filename = event.old_filepath.value().string()};
+        .old_filename = extract_filename_from_path(event.old_filepath.value().string()),
+        .new_filename = extract_filename_from_path(event.new_filepath.value().string())};
 
     messenger.send_json_message(msg);
 }
@@ -57,7 +57,6 @@ void FileChangeHandler::handle_modify_file(const FileEvent &event, DirSnapshot &
     const std::string filename = extract_filename_from_path(filepath);
 
     FileSnapshot curr_file_snap = SnapshotManager::createSnapshot(event.filepath);
-
     FileSnapshot prev_file_snap = prev_snap[filename];
 
     // will return changes in sorted order means every array(added,modified,removed all will be sorted)
@@ -69,6 +68,10 @@ void FileChangeHandler::handle_modify_file(const FileEvent &event, DirSnapshot &
     size_t total_modified = file_modification.modified.size();
     size_t total_added = file_modification.added.size();
     size_t total_removed = file_modification.removed.size();
+
+    std::clog<<"total_modified: "<<total_modified<<std::endl;
+    std::clog<<"total_added: "<<total_added<<std::endl;
+    std::clog<<"total_removed: "<<total_removed<<std::endl;
 
     // now we have to send changes sorted by their offset
     for (size_t i = 0, j = 0, k = 0;
@@ -85,7 +88,7 @@ void FileChangeHandler::handle_modify_file(const FileEvent &event, DirSnapshot &
         if (k < total_modified)
             modified_chunk = file_modification.modified[k];
 
-            // check if really using min_offset works
+        // check if really using min_offset works
         size_t min_offset = std::min(added_chunk.offset, std::min(removed_chunk.offset, modified_chunk.offset));
 
         if (min_offset == added_chunk.offset)
@@ -98,7 +101,7 @@ void FileChangeHandler::handle_modify_file(const FileEvent &event, DirSnapshot &
             messenger.send_file_data(fileio, min_offset, chunk_size);
             ++i;
         }
-        if (min_offset == removed_chunk.offset)
+        else if (min_offset == removed_chunk.offset)
         {
             msg.type = MessageType::REMOVED_CHUNK;
             msg.payload = std::move(removed_chunk);
@@ -106,9 +109,9 @@ void FileChangeHandler::handle_modify_file(const FileEvent &event, DirSnapshot &
             messenger.send_json_message(msg);
             ++j;
         }
-        if (min_offset == modified_chunk.offset)
+        else if (min_offset == modified_chunk.offset)
         {
-            size_t chunk_size = added_chunk.chunk_size;
+            size_t chunk_size = modified_chunk.chunk_size;
             msg.type = MessageType::MODIFIED_CHUNK;
             msg.payload = std::move(modified_chunk);
 

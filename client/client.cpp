@@ -33,11 +33,11 @@ int main()
 
     // get prev and current snapshots
     auto curr_snap = snap_manager.scan_directory();
-    auto prev_snap = snap_manager.load_snapshot();
+    auto prev_snap = curr_snap;
 
-    DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, prev_snap);
+    // DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, prev_snap);
 
-    snap_manager.save_snapshot(curr_snap);
+    // snap_manager.save_snapshot(curr_snap);
 
     // create connection to server
     TcpConnection client(SERVER_IP, std::to_string(PORT));
@@ -67,8 +67,6 @@ int main()
         for (auto &event : events)
             file_change_handler.handle_event(event, prev_snap, curr_snap);
     }
-
-    client.closeConnection();
 
     return 0;
 }

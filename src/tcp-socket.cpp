@@ -54,7 +54,6 @@ void TcpConnection::connectToServer(const std::string &host, const std::string &
   if (sockfd == -1)
     throw std::runtime_error("Failed to connect");
 
-  std::clog << "connected to server with fd: " << sockfd << std::endl;
 }
 
 TcpServer::TcpServer(const std::string &ip, const std::string &port)
@@ -90,8 +89,6 @@ TcpConnection TcpServer::acceptClient()
   int client_fd = accept(listen_fd, (struct sockaddr *)&clientAddr, &len);
   if (client_fd < 0)
     throw std::runtime_error(std::string("accept failed: ") + std::strerror(errno));
-
-  std::clog << "conencted to client" << std::endl;
 
   return TcpConnection(client_fd);
 }

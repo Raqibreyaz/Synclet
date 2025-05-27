@@ -45,10 +45,7 @@ MessageType message_type_from_string(const std::string &type)
 // converts message to json
 void to_json(json &j, const Message &msg)
 {
-    std::clog << "converting message to json" << std::endl;
     j["type"] = message_type_to_string(msg.type);
-
-    std::clog << "type: " << j["type"] << std::endl;
 
     std::visit([&](auto &actualPayload)
                {
@@ -59,8 +56,6 @@ void to_json(json &j, const Message &msg)
                 if constexpr(!std::is_same_v<T,std::monostate>)
                     j["payload"] = actualPayload; },
                msg.payload);
-
-    std::clog << "payload: " << j["payload"] << std::endl;
 }
 
 // converts given json to message

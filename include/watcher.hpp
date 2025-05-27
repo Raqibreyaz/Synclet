@@ -6,6 +6,7 @@
 #include <sys/inotify.h>
 #include <filesystem>
 #include <unordered_map>
+#include <iostream>
 #include "file-event.hpp"
 
 class Watcher
