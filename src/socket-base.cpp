@@ -31,21 +31,22 @@ std::string SocketBase::receiveAll()
 std::string SocketBase::receiveSome(const size_t maxSize = 1024)
 {
     std::string result(maxSize, '\0');
-    ssize_t total_received_bytes = 0, received_bytes = 0;
+    size_t total_received_bytes = 0;
 
-    do
+    while (total_received_bytes < maxSize)
     {
-        received_bytes = recv(sockfd,
-                              result.data() + total_received_bytes,
-                              result.size() - total_received_bytes,
-                              0);
+        ssize_t received_bytes = recv(sockfd,
+                                      result.data() + total_received_bytes,
+                                      maxSize - total_received_bytes,
+                                      0);
 
         if (received_bytes < 0)
             throw std::runtime_error(std::string("recv failed: ") + std::strerror(errno));
+        if (received_bytes == 0)
+            throw std::runtime_error("Unexpected EOF");
 
         total_received_bytes += received_bytes;
-
-    } while (total_received_bytes < received_bytes);
+    }
 
     return result;
 }

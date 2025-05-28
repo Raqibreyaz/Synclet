@@ -78,24 +78,6 @@ what change can be tolerated-
 
 what change is proper sign of modification-
 . hash
-. chunk_size(but will not consider for check, hash is reliable)
+. chunk_size(but will not consider for check, hash is reliable) 
 
-prev_snap: C1, C2, C3, C4, C5, C6,
-curr_snap: C1', C2, C3, C4', C5
-C6=C5
-C4 & C5 changed and new C4' is there
-C3=C3
-C2=C2
-C1
-
-
-ek efficient data structure chaiye in operations ke liye- 
-dekh bro mujhe objects store krne hain with properties:
-    size_t offset;
-    size_t chunk_size;
-    std::string hash;
-    int chunk_no;
-second thing is, do we will have two version prev_snap &  curr_snap we have to compare both versions on basis of hash prop, will do these operations:
-. take prev_snap object and find using its hash that is there an object in curr_snap with this hash
-. take curr_snap object and find using its hash that is there an object in prev_snap with this hash
-. in both cases when prev_snap object not found in curr_snap then the chunk is modified/removed and when curr_snap object not found in prev_snap then chunk is added/modified
+- use "timerfd" API for handling MOVED_FROM | MOVED_INTO events efficiently + watcher class 

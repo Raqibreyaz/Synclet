@@ -63,8 +63,6 @@ std::vector<FileEvent> Watcher::poll_events()
             const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - rename_it->second.timestamp);
             bool is_rename_taken = false;
 
-            std::clog << duration.count() << "ms passed" << std::endl;
-
             // when both exists then push the rename event
             if (!(old_filepath.empty()) && !(new_filepath.empty()))
             {
@@ -75,19 +73,19 @@ std::vector<FileEvent> Watcher::poll_events()
             // when moved_from exists and timer expired
             if (!(old_filepath.empty()) && duration.count() >= RENAME_DELAY)
             {
-                events.emplace_back(filepath, EventType::DELETED, -1);
+                events.emplace_back(old_filepath, EventType::DELETED, -1);
                 is_rename_taken = true;
             }
 
             // when moved_to exists and timer expires
             if (!(new_filepath.empty()) && duration.count() >= RENAME_DELAY)
             {
-                events.emplace_back(filepath, EventType::CREATED, -1);
+                events.emplace_back(new_filepath, EventType::CREATED, -1);
                 is_rename_taken = true;
             }
 
             if (is_rename_taken)
-                 rename_it = file_rename_tracker.erase(rename_it);
+                rename_it = file_rename_tracker.erase(rename_it);
             else
                 rename_it++;
         }

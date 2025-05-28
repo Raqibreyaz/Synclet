@@ -1,11 +1,3 @@
-TYPE: SEND_CHUNK
-PAYLOAD:{
-    filename;
-    chunk_no;
-    chunk_size;
-    offset;
-}
-
 TYPE: MODIFIED_CHUNK
 PAYLOAD:{
     filename;
@@ -73,3 +65,15 @@ chunks:[
 . copy 20-29 from original then write chunk[1]
 . copy 70-99 from original then write chunk[2]
 . copy all the data from offset 150
+
+- for cleaning changes of each file 
+- hashmap<filename,{
+    last_event,
+    last_time,
+    timer_active,
+    scheduled_action
+}>
+1. last_event: Helps to avoid reacting to duplicate/redundant events.
+2. last_time: Stores the timestamp of the last received event for this file.
+3. timer_active: If an event comes and a timer is already running, we reset it instead of starting a new one.
+4. scheduled_action: Helps to avoid redundant processing, Can be used to cancel scheduled actions if DELETE happens before MODIFY action fires.
