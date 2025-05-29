@@ -25,7 +25,9 @@ SERVER_SRCS := server/server.cpp \
 	src/file-io.cpp \
 	src/file-event.cpp \
 	src/message-types.cpp \
-	src/snapshot-manager.cpp
+	src/snapshot-manager.cpp \
+	src/file-pair-session.cpp \
+	src/server-message-handler.cpp
 
 CLIENT_OBJS = $(CLIENT_SRCS:.cpp=.o)
 SERVER_OBJS = $(SERVER_SRCS:.cpp=.o)

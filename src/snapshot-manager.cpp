@@ -134,7 +134,7 @@ DirSnapshot SnapshotManager::scan_directory()
     return snapshots;
 }
 
-// Compare two snapshots and return changed/added/deleted chunks
+// Compare two snapshots and return changed/added/deleted files
 DirChanges SnapshotManager::compare_snapshots(
     const DirSnapshot &currSnapshot, const DirSnapshot &prevSnapshot)
 {
@@ -149,15 +149,18 @@ DirChanges SnapshotManager::compare_snapshots(
         // check for file addition
         if (prev_snap == prevSnapshot.end())
         {
-            std::clog << std::format("{} file is added", filename) << std::endl;
             changes.created_files.push_back(filename);
         }
 
         // check for file modification
         else if (snap.file_size != prev_snap->second.file_size || snap.mtime != prev_snap->second.mtime)
         {
-            std::clog << std::format("in {}", filename) << std::endl;
-            changes.modified_files.push_back(get_file_modification(snap, prev_snap->second));
+            FileModification &&file_modification = get_file_modification(snap, prev_snap->second);
+
+            if (!(file_modification.added.empty()) ||
+                !(file_modification.modified.empty()) ||
+                !(file_modification.removed.empty()))
+                changes.modified_files.push_back(std::move(file_modification));
         }
     }
 
@@ -165,12 +168,8 @@ DirChanges SnapshotManager::compare_snapshots(
     for (const auto &[filename, snap] : prevSnapshot)
         if (currSnapshot.find(filename) == currSnapshot.end())
         {
-            std::clog << std::format("{} file is deleted!", filename) << std::endl;
             changes.removed_files.push_back(filename);
         }
-
-    if (changes.created_files.empty() && changes.modified_files.empty() && changes.removed_files.empty())
-        std::clog << "no changes found" << std::endl;
 
     return changes;
 }
@@ -179,6 +178,7 @@ DirChanges SnapshotManager::compare_snapshots(
 FileModification SnapshotManager::get_file_modification(const FileSnapshot &file_curr_snap, const FileSnapshot &file_prev_snap)
 {
     FileModification changes{
+        .filename = file_curr_snap.filename,
         .added = {},
         .modified = {},
         .removed = {}};

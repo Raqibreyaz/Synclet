@@ -1,25 +1,28 @@
 TYPE: MODIFIED_CHUNK
 PAYLOAD:{
-    filename;
-    new_start_index;
-    new_end_index;
-    old_start_index;
-    old_end_index;
+     filename;
+     offset;
+     chunk_size;
+     is_last_chunk;    
+     old_chunk_size;
 }
 
 TYPE: ADDED_CHUNK
 PAYLOAD:{
     filename;
-    new_start_index;
-    new_end_index;
+    offset;
+    chunk_size;
+    is_last_chunk
 }
 
 TYPE: REMOVED_CHUNK
 PAYLOAD:{
-
     filename;
-    last_index;
+    offset;
+    chunk_size;
+    is_last_chunk
 }
+
 
 TYPE: FILE_CREATE
 PAYLOAD:{

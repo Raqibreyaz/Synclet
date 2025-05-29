@@ -33,40 +33,58 @@ int main()
 
     // get prev and current snapshots
     auto curr_snap = snap_manager.scan_directory();
-    auto prev_snap = curr_snap;
+    auto prev_snap = snap_manager.load_snapshot();
 
-    // DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, prev_snap);
+    DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, prev_snap);
 
-    // snap_manager.save_snapshot(curr_snap);
-
-    // create connection to server
-    TcpConnection client(SERVER_IP, std::to_string(PORT));
-
-    Watcher watcher(DATA_DIR);
-
-    Messenger messenger(client);
-
-    FileChangeHandler file_change_handler(messenger);
-
-    json j;
-    Message msg;
-
-    signal_handler = [&client]()
+    for (const auto &file : dir_changes.created_files)
     {
-        client.closeConnection();
-        exit(EXIT_SUCCESS);
-    };
-
-    signal(SIGINT, signal_handler_wrap);
-
-    // continuously watch for changes to sync
-    while (true)
-    {
-        auto events = watcher.poll_events();
-
-        for (auto &event : events)
-            file_change_handler.handle_event(event, prev_snap, curr_snap);
+        std::clog << file << " is created" << std::endl;
     }
+
+    for (const auto &file : dir_changes.removed_files)
+    {
+        std::clog << file << " is delete" << std::endl;
+    }
+
+    for (const auto &file : dir_changes.modified_files)
+    {
+        std::clog << file.filename << " is modified" << std::endl;
+    }
+
+    if (dir_changes.created_files.empty() && dir_changes.modified_files.empty() && dir_changes.removed_files.empty())
+        std::clog << "no changes found" << std::endl;
+    else
+        snap_manager.save_snapshot(curr_snap);
+
+    // // create connection to server
+    // TcpConnection client(SERVER_IP, std::to_string(PORT));
+
+    // Watcher watcher(DATA_DIR);
+
+    // Messenger messenger(client);
+
+    // FileChangeHandler file_change_handler(messenger);
+
+    // json j;
+    // Message msg;
+
+    // signal_handler = [&client]()
+    // {
+    //     client.closeConnection();
+    //     exit(EXIT_SUCCESS);
+    // };
+
+    // signal(SIGINT, signal_handler_wrap);
+
+    // // continuously watch for changes to sync
+    // while (true)
+    // {
+    //     auto events = watcher.poll_events();
+
+    //     for (auto &event : events)
+    //         file_change_handler.handle_event(event, prev_snap, curr_snap);
+    // }
 
     return 0;
 }
