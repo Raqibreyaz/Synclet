@@ -30,7 +30,7 @@ struct DirChanges
 {
     std::vector<std::string> removed_files;
     std::vector<FileModification> modified_files;
-    std::vector<std::string> created_files;
+    std::vector<FileSnapshot> created_files;
 };
 
 class SnapshotManager

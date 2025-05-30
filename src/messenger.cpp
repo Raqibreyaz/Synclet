@@ -7,7 +7,7 @@ using json = nlohmann::json;
 
 Messenger::Messenger(TcpConnection &conn) : client(conn) {}
 
-void Messenger::send_file_data(FileIO &fileio, const size_t offset, const size_t chunk_size)
+void Messenger::send_file_data(FileIO &fileio, const size_t offset, const size_t chunk_size) const
 {
     std::string chunk_string = fileio.read_file_from_offset(offset, chunk_size);
 
@@ -18,7 +18,7 @@ void Messenger::send_file_data(FileIO &fileio, const size_t offset, const size_t
     // client.shutdownWrite();
 }
 
-void Messenger::send_json_message(const Message &msg)
+void Messenger::send_json_message(const Message &msg) const
 {
     json j;
 
@@ -37,7 +37,7 @@ void Messenger::send_json_message(const Message &msg)
     //     client.shutdownWrite();
 }
 
-Message Messenger::receive_json_message()
+Message Messenger::receive_json_message() const
 {
     json j;
     Message msg;

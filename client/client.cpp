@@ -27,64 +27,82 @@ void signal_handler_wrap(int sig)
 
 int main()
 {
-    // initially server and client either will have snapshot to get an understanding of what to update on data
-
+    // configuring snap manager and watcher over the working dir
     SnapshotManager snap_manager(DATA_DIR, SNAP_FILE);
+    Watcher watcher(DATA_DIR);
 
-    // get prev and current snapshots
+    // create connection to server
+    TcpConnection client(SERVER_IP, std::to_string(PORT));
+
+    // configuring messenger to send/receive messages
+    Messenger messenger(client);
+
+    // configuring change handler to sync changes
+    FileChangeHandler file_change_handler(messenger, DATA_DIR);
+
+    // get server's snap and current snap
     auto curr_snap = snap_manager.scan_directory();
-    auto prev_snap = snap_manager.load_snapshot();
+    auto server_snap = snap_manager.load_snapshot();
 
-    DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, prev_snap);
+    // for checking if initial changes
+    const bool is_server_snap_present = !server_snap.empty();
 
-    for (const auto &file : dir_changes.created_files)
+    // request server to send snap of data
+    if (!is_server_snap_present)
     {
-        std::clog << file << " is created" << std::endl;
+        Message msg;
+
+        msg.type = MessageType::REQ_SNAP;
+        msg.payload = {};
+
+        messenger.send_json_message(msg);
+
+        // receive snap of data from server
+        Message &&server_message = messenger.receive_json_message();
+
+        if (msg.type != MessageType::DATA_SNAP)
+            throw std::runtime_error("invalid type of message");
+
+        if (auto payload_ptr = std::get_if<DataSnapshotPayload>(&(server_message.payload)))
+        {
+            for (auto &file : payload_ptr->files)
+                server_snap[file.filename] = std::move(file);
+        }
+        else
+            throw std::runtime_error("invalid data received");
     }
 
-    for (const auto &file : dir_changes.removed_files)
-    {
-        std::clog << file << " is delete" << std::endl;
-    }
-
-    for (const auto &file : dir_changes.modified_files)
-    {
-        std::clog << file.filename << " is modified" << std::endl;
-    }
+    // compare both snapshots and find changes
+    DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, server_snap);
 
     if (dir_changes.created_files.empty() && dir_changes.modified_files.empty() && dir_changes.removed_files.empty())
-        std::clog << "no changes found" << std::endl;
-    else
+        std::clog << "no initial changes found" << std::endl;
+
+    // sync changes
+    else if (is_server_snap_present)
+    {
+        std::clog << "initial changes found!! syncing..." << std::endl;
+        file_change_handler.handle_changes(dir_changes);
+
+        // after syncing changes now save the server's snap
         snap_manager.save_snapshot(curr_snap);
+    }
 
-    // // create connection to server
-    // TcpConnection client(SERVER_IP, std::to_string(PORT));
+    signal_handler = [&client]()
+    {
+        client.closeConnection();
+        exit(EXIT_SUCCESS);
+    };
+    signal(SIGINT, signal_handler_wrap);
 
-    // Watcher watcher(DATA_DIR);
+    // continuously watch for changes to sync
+    while (true)
+    {
+        const auto events = watcher.poll_events();
 
-    // Messenger messenger(client);
-
-    // FileChangeHandler file_change_handler(messenger);
-
-    // json j;
-    // Message msg;
-
-    // signal_handler = [&client]()
-    // {
-    //     client.closeConnection();
-    //     exit(EXIT_SUCCESS);
-    // };
-
-    // signal(SIGINT, signal_handler_wrap);
-
-    // // continuously watch for changes to sync
-    // while (true)
-    // {
-    //     auto events = watcher.poll_events();
-
-    //     for (auto &event : events)
-    //         file_change_handler.handle_event(event, prev_snap, curr_snap);
-    // }
+        for (const auto &event : events)
+            file_change_handler.handle_event(event, curr_snap);
+    }
 
     return 0;
 }

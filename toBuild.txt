@@ -20,7 +20,7 @@ CDC(content defined chunking)
 - chunks are created using (hash % N == 0), if this condition met for a window ✅
 - 2 important vars, N and window size ✅
 - chunks can be of ~N size but not ==N ✅
-- used hybrid approach of weak + strong hash where weak hash finds boundary and strong hash for saving actual hash of chunk
+- used hybrid approach of weak + strong hash where weak hash finds boundary and strong hash for saving actual hash of chunk (used combination of rolling hash + SHA-256) ✅ 
 
 - in case of just rename not deletion then instead of sending file, rename in the server too!! ✅
 - compare changes optimally ✅
@@ -29,8 +29,7 @@ CDC(content defined chunking)
 - how to send the rename state with the snapshot? ✅
 - how to single update when multiple rename of the same file? ❌
 - instead of logging now we have to return the changed parts for syncing ✅
-- create a minimal version where client on detecting changes using inotify syncs to server 
-✅
+- create a minimal version where client on detecting changes using inotify syncs to server ✅
 
 - how the debouncing works here?
 
@@ -39,16 +38,16 @@ for same file MODIFY + DELETE then consider DELETE, for same file MODIFY + MODIF
 . one approach can be spawn a thread where main thread will take out events and side by side child thread will clean the events
 
 - optimise fileio class for removing/adding & modifying specific chunks
-given offset and chunk_size
-. remove bytes from j index to last, ftruncate!!
-. add chars from offset to offset+chunk_size-1
-. this can only be done via creating a temp file as doing these operations not possible for files
-. but have to optimise as if multiple chunks are to be sent then for each cunk a temp file will be created/destroyed so need to understand when to create/destroy temp file
+given offset and chunk_size ✅
+. remove bytes from j index to last, ftruncate!! but not ftruncate, instead we written to temp_file and escaping that chunk thats all ✅
+. add chars from offset to offset+chunk_size-1 ✅
+. this can only be done via creating a temp file as doing these operations not possible for files ✅
+. but have to optimise as if multiple chunks are to be sent then for each cunk a temp file will be created/destroyed so need to understand when to create/destroy temp file ✅
 
 - add a class for handling different types of messages for client side✅
-- add a class for handling different types of message for server side 
+- add a class for handling different types of message for server side ✅
 
-- create the whole logic of server side to handle chunks writes, chunk deletes
+- create the whole logic of server side to handle chunks writes, chunk deletes ✅
 
 modification: ✅
 . old chunk offset + size to remove the chunk and new chunk's offset + size to extract from file and replace with.
@@ -59,25 +58,10 @@ deletion: ✅
 . suppose 5 chunks removed so take the end index of the first removed chunk 
 - addition/deletion only one will exist at a time ✅
 
-- initially any peer should know what to send/receive before watching for events as there can be changes when program was closed.
-- lets say some files were modifed, few were removed, few were created then how this info will be sent as we  have different message types for these (using SYNC_SESSION) 
+- initially any peer should know what to send/receive before watching for events as there can be changes when program was closed. ✅
+- lets say some files were modifed, few were removed, few were created then how this info will be sent as we  have different message types for these✅ 
 
-- how server should handle multiple modify chunks of same file 
-. by keeping a file pointer which opens a file and not closes till any other file's chunk come
+- how server should handle multiple modify chunks of same file ✅
+. by keeping a file pointer which opens a file and not closes till any other file's chunk come ✅
 . but issue is when to detect that this is the last modify chunk received ✅ (added is_last_chunk prop)
 
-chunk:{               
-    offset,
-    chunk_size,
-    hash,
-    chunk_no
-}       
-what change can be tolerated-  
-. offset,
-. chunk_no
-
-what change is proper sign of modification-
-. hash
-. chunk_size(but will not consider for check, hash is reliable) 
-
-- use "timerfd" API for handling MOVED_FROM | MOVED_INTO events efficiently + watcher class 

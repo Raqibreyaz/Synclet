@@ -7,11 +7,11 @@
 class Messenger
 {
 public:
-   explicit Messenger(TcpConnection& conn);
+    explicit Messenger(TcpConnection &conn);
 
-    void send_json_message(const Message& msg);
-    void send_file_data(FileIO &fileio,const size_t offset,const size_t chunk_size);
-    Message receive_json_message();
+    void send_json_message(const Message &msg) const;
+    void send_file_data(FileIO &fileio, const size_t offset, const size_t chunk_size) const;
+    Message receive_json_message() const;
     // void receive_file_data();
 private:
     TcpConnection &client;

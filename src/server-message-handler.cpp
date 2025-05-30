@@ -5,14 +5,14 @@ ServerMessageHandler::ServerMessageHandler(const std::string &working_dir, TcpCo
       client(client) {}
 
 // returns the session of that particular file, creates one if not present
-void ServerMessageHandler::get_or_create_session(const std::string &filename)
+void ServerMessageHandler::get_or_create_session(const std::string &filename, const bool append_to_original)
 {
     const std::string filepath = working_dir + "/" + filename;
 
     if (!active_session)
-        active_session = std::make_unique<FilePairSession>(filepath);
+        active_session = std::make_unique<FilePairSession>(filepath, append_to_original);
 
-    active_session->reset_if_filepath_changes(filepath);
+    active_session->reset_if_filepath_changes_append_required(filepath, append_to_original);
     active_session->ensure_files_open();
 }
 
@@ -20,6 +20,14 @@ void ServerMessageHandler::process_create_file(const FileCreateRemovePayload &pa
 {
     // will create a file of this name
     get_or_create_session(payload.filename);
+}
+
+void ServerMessageHandler::process_create_file(const FilesCreatedPayload &payload)
+{
+    for (const auto &filename : payload.files)
+    {
+        get_or_create_session(filename);
+    }
 }
 
 void ServerMessageHandler::process_delete_file(const FileCreateRemovePayload &payload)
@@ -35,6 +43,22 @@ void ServerMessageHandler::process_delete_file(const FileCreateRemovePayload &pa
         fs::remove(filepath);
 }
 
+void ServerMessageHandler::process_delete_file(const FilesRemovedPayload &payload)
+{
+    for (auto &filename : payload.files)
+    {
+        auto filepath = working_dir + "/" + filename;
+
+        // close the file if it is opened
+        if (active_session && active_session->get_filepath() == filepath)
+            active_session->close_session();
+
+        // before removing check if file exists
+        if (fs::exists(filepath))
+            fs::remove(filepath);
+    }
+}
+
 void ServerMessageHandler::process_file_rename(const FileRenamePayload &payload)
 {
     auto old_filepath = working_dir + "/" + payload.old_filename;
@@ -42,7 +66,7 @@ void ServerMessageHandler::process_file_rename(const FileRenamePayload &payload)
 
     // point to the new filepath now
     if (active_session && active_session->get_filepath() == old_filepath)
-        active_session->reset_if_filepath_changes(new_filepath);
+        active_session->reset_if_filepath_changes_append_required(new_filepath, active_session->is_appending_to_original());
 
     fs::rename(old_filepath, new_filepath);
 }
@@ -62,7 +86,7 @@ void ServerMessageHandler::process_modified_chunk(const ModifiedChunkPayload &pa
     std::string data = client.receiveSome(payload.chunk_size);
 
     // since cursor is pointing to old_file so we will move according to oldChunkSize
-    active_session->append_data(data, payload.old_chunk_size);
+    active_session->add_chunk(data, payload.old_chunk_size);
 
     // handle the last chunk by integrating the rest of the data
     if (payload.is_last_chunk)
@@ -85,10 +109,21 @@ void ServerMessageHandler::process_add_remove_chunk(const AddRemoveChunkPayload 
     if (!is_removed)
     {
         std::string data = client.receiveSome(payload.chunk_size);
-        active_session->append_data(data, payload.chunk_size);
+        active_session->add_chunk(data, payload.chunk_size);
     }
 
     // if this is the last chunk then append all rest of the data now
     if (payload.is_last_chunk)
         active_session->finalize_and_replace();
+}
+
+void ServerMessageHandler::process_file_chunk(const SendChunkPayload &payload)
+{
+    get_or_create_session(payload.filename, true);
+
+    active_session->ensure_files_open();
+
+    std::string chunk_data = client.receiveSome(payload.chunk_size);
+
+    active_session->append_data(chunk_data);
 }

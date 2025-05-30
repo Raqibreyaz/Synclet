@@ -1,3 +1,18 @@
+chunk:{               
+    offset,
+    chunk_size,
+    hash,
+    chunk_no
+}       
+what change can be tolerated-  
+. offset,
+. chunk_no
+
+what change is proper sign of modification-
+. hash
+. chunk_size(but will not consider for check, hash is reliable)
+
+
 TYPE: MODIFIED_CHUNK
 PAYLOAD:{
      filename;
@@ -6,6 +21,7 @@ PAYLOAD:{
      is_last_chunk;    
      old_chunk_size;
 }
+raw_data: yes
 
 TYPE: ADDED_CHUNK
 PAYLOAD:{
@@ -14,6 +30,7 @@ PAYLOAD:{
     chunk_size;
     is_last_chunk
 }
+raw_data: yes
 
 TYPE: REMOVED_CHUNK
 PAYLOAD:{
@@ -22,41 +39,71 @@ PAYLOAD:{
     chunk_size;
     is_last_chunk
 }
-
+raw_data: no
 
 TYPE: FILE_CREATE
 PAYLOAD:{
     filename
 }
+raw_data: no
 
 TYPE: FILE_RENAME
 PAYLOAD:{
     old_filename;
     new_filename;
 }
+raw_data: no
 
 TYPE: FILE_REMOVE
 PAYLOAD:{
     filename;
 }
+raw_data: no
 
-TYPE: SYNC_SESSION
-PAYLOAD: {
-    created_files: [ ... ],
-    renamed_files: [ ... ],
-    removed_files: [ ... ],
-    modified_files: [
-        {
-            filename: "abc.txt",
-            changes: [
-                { type: "MODIFIED_CHUNK", ... },
-                { type: "ADDED_CHUNK", ... },
-                ...
-            ]
-        },
-        ...
-    ]
+TYPE: FILES_REMOVE
+PAYLOAD:{
+    [filename];
 }
+raw_data: no
+
+TYPE: FILES_CREATE
+PAYLOAD:{
+    [filename];
+}
+raw_data: no
+
+TYPE: REQ_SNAP
+PAYLOAD: {}
+raw_data: no
+
+TYPE: DATA_SNAP
+PAYLOAD:{
+    [
+        {
+            filename,
+            file_size,
+            mtime,
+            chunks:{
+                "hash":{
+                    offset,
+                    chunk_size,
+                    hash,
+                    chunk_no
+                }
+            }
+        }
+    ];
+}
+raw_data: no
+
+
+TYPE: SEND_CHUNK
+PAYLOAD:{
+    filename,
+    chunk_size,
+    chunk_no
+}
+raw_data: yes
 
 chunks:[
     {offset: 10,size:10}
@@ -80,3 +127,9 @@ chunks:[
 2. last_time: Stores the timestamp of the last received event for this file.
 3. timer_active: If an event comes and a timer is already running, we reset it instead of starting a new one.
 4. scheduled_action: Helps to avoid redundant processing, Can be used to cancel scheduled actions if DELETE happens before MODIFY action fires.
+
+INITIAL_SYNC
+- client request server to send its snapshot REQ_SNAP as client initially will not have a snap-file.json for server's snap ✅
+- on getting snap, client will compare its snap and server's  ✅
+- if client has not any data then will ask server REQ_DATA
+- if client found changes to sync to server then directly send changes in bulk ✅

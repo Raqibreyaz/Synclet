@@ -65,9 +65,32 @@ int main()
                 std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
             break;
         }
+
         case MessageType::FILE_REMOVE:
         {
             auto payload = std::get_if<FileCreateRemovePayload>(&(msg.payload));
+            if (payload)
+                message_handler.process_delete_file(*payload);
+            else
+                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+            break;
+        }
+
+        case MessageType::FILES_CREATE:
+        {
+            auto payload = std::get_if<FilesCreatedPayload>(&(msg.payload));
+
+            if (payload)
+                message_handler.process_create_file(*payload);
+            else
+                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+
+            break;
+        }
+
+        case MessageType::FILES_REMOVE:
+        {
+            auto payload = std::get_if<FilesRemovedPayload>(&(msg.payload));
             if (payload)
                 message_handler.process_delete_file(*payload);
             else
@@ -114,6 +137,46 @@ int main()
                 std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
             break;
         }
+
+        case MessageType::SEND_CHUNK:
+        {
+            auto payload = std::get_if<SendChunkPayload>(&(msg.payload));
+            if (payload)
+                message_handler.process_file_chunk(*payload);
+            else
+                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+            break;
+        }
+
+        case MessageType::REQ_SNAP:
+        {
+            DataSnapshotPayload payload;
+            payload.files.reserve(snaps.size());
+
+            for (const auto &[_, file_snap] : snaps)
+                payload.files.push_back(file_snap);
+
+            msg.type = MessageType::DATA_SNAP;
+            msg.payload = std::move(payload);
+
+            messenger.send_json_message(msg);
+        }
+
+        case MessageType::REQ_DOWNLOAD_FILES:
+        {
+            auto payload = std::get_if<RequestDownloadFilesPayload>(&(msg.payload));
+
+            if (!payload)
+            {
+                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+                break;
+            }
+
+            payload->files;
+        }
+
+        default:
+            break;
         }
     }
     return 0;

@@ -149,7 +149,7 @@ DirChanges SnapshotManager::compare_snapshots(
         // check for file addition
         if (prev_snap == prevSnapshot.end())
         {
-            changes.created_files.push_back(filename);
+            changes.created_files.push_back(snap);
         }
 
         // check for file modification

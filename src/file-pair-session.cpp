@@ -1,32 +1,41 @@
 #include "../include/file-pair-session.hpp"
 
-FilePairSession::FilePairSession(const std::string &filepath)
+FilePairSession::FilePairSession(const std::string &filepath, const bool append_to_original)
     : original_filepath(filepath),
-      temp_filepath(filepath + ".incoming") {}
+      append_to_original(append_to_original)
+{
+    if (!append_to_original)
+        temp_filepath = filepath + ".incoming";
+}
 
 // point original_file and temp_file ptr to current given file
 void FilePairSession::ensure_files_open()
 {
     if (!original_file)
     {
-        original_file = std::make_unique<FileIO>(original_filepath, std::ios::in);
+        std::ios::openmode mode = append_to_original ? std::ios::app : std::ios::in;
+        original_file = std::make_unique<FileIO>(original_filepath, mode);
     }
 
-    if (!temp_file)
+    if (!temp_file && !append_to_original)
     {
         temp_file = std::make_unique<FileIO>(temp_filepath, std::ios::out | std::ios::app);
     }
 }
 
 // point original_file and temp_file ptr to new file, if given
-void FilePairSession::reset_if_filepath_changes(const std::string &new_filepath)
+void FilePairSession::reset_if_filepath_changes_append_required(const std::string &new_filepath, const bool append_to_original)
 {
 
-    if (original_filepath != new_filepath)
+    if (original_filepath != new_filepath ||
+        this->append_to_original != append_to_original)
     {
         close_session();
         original_filepath = new_filepath;
-        temp_filepath = original_filepath + ".incoming";
+
+        if (!append_to_original)
+            temp_filepath = original_filepath + ".incoming";
+
         cursor = 0;
     }
     ensure_files_open();
@@ -50,8 +59,14 @@ void FilePairSession::fill_gap_till_offset(const size_t offset)
     temp_file->append_chunk(to_copy);
 }
 
+// append chunk data to original file
+void FilePairSession::append_data(const std::string &chunk)
+{
+    original_file->append_chunk(chunk);
+}
+
 // chunk_size can be != chunk.size as in case of modify we will be replacing data of differet size
-void FilePairSession::append_data(const std::string &chunk, const size_t chunk_size)
+void FilePairSession::add_chunk(const std::string &chunk, const size_t chunk_size)
 {
     temp_file->append_chunk(chunk);
     cursor += chunk_size;
@@ -93,4 +108,9 @@ void FilePairSession::close_session()
 std::string FilePairSession::get_filepath()
 {
     return original_filepath;
+}
+
+bool FilePairSession::is_appending_to_original()
+{
+    return append_to_original;
 }

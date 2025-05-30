@@ -17,6 +17,18 @@ std::string message_type_to_string(MessageType type)
         return "REMOVED_CHUNK";
     case MessageType::ADDED_CHUNK:
         return "ADDED_CHUNK";
+    case MessageType::DATA_SNAP:
+        return "DATA_SNAP";
+    case MessageType::FILES_CREATE:
+        return "FILES_CREATE";
+    case MessageType::FILES_REMOVE:
+        return "FILES_REMOVE";
+    case MessageType::REQ_SNAP:
+        return "REQ_SNAP";
+    case MessageType::SEND_CHUNK:
+        return "SEND_CHUNK";
+    case MessageType::REQ_DOWNLOAD_FILES:
+        return "REQ_DOWNLOAD_FILES";
 
     default:
         return "UNKNOWN";
@@ -38,6 +50,18 @@ MessageType message_type_from_string(const std::string &type)
         return MessageType::FILE_RENAME;
     else if (type == "ADDED_CHUNK")
         return MessageType::ADDED_CHUNK;
+    else if (type == "DATA_SNAP")
+        return MessageType::DATA_SNAP;
+    else if (type == "FILES_CREATE")
+        return MessageType::FILES_CREATE;
+    else if (type == "FILES_REMOVE")
+        return MessageType::FILES_REMOVE;
+    else if (type == "REQ_SNAP")
+        return MessageType::REQ_SNAP;
+    else if (type == "SEND_CHUNK")
+        return MessageType::SEND_CHUNK;
+    else if (type == "REQ_DOWNLOAD_FILES")
+        return MessageType::REQ_DOWNLOAD_FILES;
 
     throw std::runtime_error(std::format("unknown message type received {}", type));
 }
@@ -71,18 +95,57 @@ void from_json(const json &j, Message &m)
 
     const auto &payload_json = j["payload"];
 
-    if (m.type == MessageType::FILE_CREATE)
-        m.payload = payload_json.get<FileCreateRemovePayload>();
-    else if (m.type == MessageType::FILE_REMOVE)
-        m.payload = payload_json.get<FileCreateRemovePayload>();
-    else if (m.type == MessageType::FILE_RENAME)
-        m.payload = payload_json.get<FileRenamePayload>();
-    else if (m.type == MessageType::MODIFIED_CHUNK)
-        m.payload = payload_json.get<ModifiedChunkPayload>();
-    else if (m.type == MessageType::REMOVED_CHUNK)
-        m.payload = payload_json.get<AddRemoveChunkPayload>();
-    else if (m.type == MessageType::ADDED_CHUNK)
-        m.payload = payload_json.get<AddRemoveChunkPayload>();
-    else
+    switch (m.type)
+    {
+    case MessageType::REQ_SNAP:
         m.payload = std::monostate{};
+        break;
+
+    case MessageType::FILE_CREATE:
+        m.payload = payload_json.get<FileCreateRemovePayload>();
+        break;
+
+    case MessageType::FILE_REMOVE:
+        m.payload = payload_json.get<FileCreateRemovePayload>();
+        break;
+
+    case MessageType::FILE_RENAME:
+        m.payload = payload_json.get<FileRenamePayload>();
+        break;
+
+    case MessageType::MODIFIED_CHUNK:
+        m.payload = payload_json.get<ModifiedChunkPayload>();
+        break;
+
+    case MessageType::REMOVED_CHUNK:
+        m.payload = payload_json.get<AddRemoveChunkPayload>();
+        break;
+
+    case MessageType::ADDED_CHUNK:
+        m.payload = payload_json.get<AddRemoveChunkPayload>();
+        break;
+
+    case MessageType::DATA_SNAP:
+        m.payload = payload_json.get<DataSnapshotPayload>();
+        break;
+
+    case MessageType::FILES_CREATE:
+        m.payload = payload_json.get<FilesCreatedPayload>();
+        break;
+
+    case MessageType::FILES_REMOVE:
+        m.payload = payload_json.get<FilesRemovedPayload>();
+        break;
+
+    case MessageType::SEND_CHUNK:
+        m.payload = payload_json.get<SendChunkPayload>();
+        break;
+
+    case MessageType::REQ_DOWNLOAD_FILES:
+        m.payload = payload_json.get<RequestDownloadFilesPayload>();
+        break;
+
+    default:
+        m.payload = std::monostate{};
+    }
 }
