@@ -1,8 +1,9 @@
 #include "../include/server-message-handler.hpp"
 
-ServerMessageHandler::ServerMessageHandler(const std::string &working_dir, TcpConnection &client)
+ServerMessageHandler::ServerMessageHandler(const std::string &working_dir, TcpConnection &client, Messenger &messenger)
     : working_dir(working_dir),
-      client(client) {}
+      client(client),
+      messenger(messenger) {}
 
 // returns the session of that particular file, creates one if not present
 void ServerMessageHandler::get_or_create_session(const std::string &filename, const bool append_to_original)
@@ -18,15 +19,53 @@ void ServerMessageHandler::get_or_create_session(const std::string &filename, co
 
 void ServerMessageHandler::process_create_file(const FileCreateRemovePayload &payload)
 {
-    // will create a file of this name
-    get_or_create_session(payload.filename);
+    // file will be created on opening it
+    FileIO fileio(working_dir + "/" + payload.filename, std::ios::out | std::ios::app);
+
+    Message msg = messenger.receive_json_message();
+
+    if (msg.type != MessageType::SEND_CHUNK)
+        throw std::runtime_error("invalid message type received!");
+
+    // now fetch all the chunks and append to file
+    while (auto chunk_payload = std::get_if<SendChunkPayload>(&(msg.payload)))
+    {
+        if (chunk_payload->filename != payload.filename)
+            throw std::runtime_error(std::format("invalid chunk received from another file: {} instead of {}", chunk_payload->filename, payload.filename));
+
+        std::string chunk_data = client.receiveSome(chunk_payload->chunk_size);
+
+        fileio.append_chunk(chunk_data);
+
+        if (chunk_payload->is_last_chunk)
+            return;
+    }
 }
 
 void ServerMessageHandler::process_create_file(const FilesCreatedPayload &payload)
 {
     for (const auto &filename : payload.files)
     {
-        get_or_create_session(filename);
+        // file will be created on opening it
+        FilePairSession file_session(working_dir + "/" + filename, true);
+
+        Message msg = messenger.receive_json_message();
+
+        if (msg.type != MessageType::SEND_CHUNK)
+            std::runtime_error("invalid message type received!");
+
+        // now fetch all the chunks and append to file
+        while (auto chunk_payload = std::get_if<SendChunkPayload>(&(msg.payload)))
+        {
+            if (chunk_payload->filename != filename)
+                throw std::runtime_error(std::format("invalid chunk received from another file: {} instead of {}", chunk_payload->filename, filename));
+
+            std::string chunk_data = client.receiveSome(chunk_payload->chunk_size);
+            file_session.append_data(chunk_data);
+
+            if (chunk_payload->is_last_chunk)
+                break;
+        }
     }
 }
 
@@ -34,13 +73,11 @@ void ServerMessageHandler::process_delete_file(const FileCreateRemovePayload &pa
 {
     auto filepath = working_dir + "/" + payload.filename;
 
-    // close the file if it is opened
-    if (active_session && active_session->get_filepath() == filepath)
-        active_session->close_session();
-
     // before removing check if file exists
     if (fs::exists(filepath))
         fs::remove(filepath);
+    else
+        std::cerr << "given file already not exists!";
 }
 
 void ServerMessageHandler::process_delete_file(const FilesRemovedPayload &payload)
@@ -49,13 +86,11 @@ void ServerMessageHandler::process_delete_file(const FilesRemovedPayload &payloa
     {
         auto filepath = working_dir + "/" + filename;
 
-        // close the file if it is opened
-        if (active_session && active_session->get_filepath() == filepath)
-            active_session->close_session();
-
         // before removing check if file exists
         if (fs::exists(filepath))
             fs::remove(filepath);
+        else
+            std::cerr << "given file already not exists!";
     }
 }
 
@@ -64,66 +99,95 @@ void ServerMessageHandler::process_file_rename(const FileRenamePayload &payload)
     auto old_filepath = working_dir + "/" + payload.old_filename;
     auto new_filepath = working_dir + "/" + payload.new_filename;
 
-    // point to the new filepath now
-    if (active_session && active_session->get_filepath() == old_filepath)
-        active_session->reset_if_filepath_changes_append_required(new_filepath, active_session->is_appending_to_original());
-
     fs::rename(old_filepath, new_filepath);
 }
 
 void ServerMessageHandler::process_modified_chunk(const ModifiedChunkPayload &payload)
 {
-    // initialize the active_sesion var with required params
-    get_or_create_session(payload.filename);
+    ChunkHandler chunk_handler(payload.filename);
 
-    // ensure that original file ptr and temp file ptr are pointing to required file
-    active_session->ensure_files_open();
-
-    // fill gap if present
-    active_session->fill_gap_till_offset(payload.offset);
+    ChunkMetadata chunk_md{
+        .op_type = OP_TYPE::MODIFY,
+        .offset = payload.offset,
+        .chunk_size = payload.chunk_size,
+        .old_chunk_size = payload.old_chunk_size,
+        .is_last_chunk = payload.is_last_chunk};
 
     // now take the chunk data
     std::string data = client.receiveSome(payload.chunk_size);
 
-    // since cursor is pointing to old_file so we will move according to oldChunkSize
-    active_session->add_chunk(data, payload.old_chunk_size);
+    chunk_handler.save_chunk(chunk_md, data);
 
-    // handle the last chunk by integrating the rest of the data
-    if (payload.is_last_chunk)
-        active_session->finalize_and_replace();
+    if (!chunk_md.is_last_chunk)
+    {
+        Message &&msg = messenger.receive_json_message();
+
+        auto new_payload = std::get_if<ModifiedChunkPayload>(&(msg.payload));
+
+        while (new_payload)
+        {
+            // now take the chunk data
+            std::string data = client.receiveSome(new_payload->chunk_size);
+
+            chunk_handler.save_chunk(chunk_md, data);
+
+            msg = messenger.receive_json_message();
+            new_payload = std::get_if<ModifiedChunkPayload>(&(msg.payload));
+
+            if (new_payload->is_last_chunk)
+                break;
+        }
+    }
+
+    chunk_handler.finalize_file(working_dir + "/" + payload.filename);
 }
 
 void ServerMessageHandler::process_add_remove_chunk(const AddRemoveChunkPayload &payload, const bool is_removed)
 {
-    get_or_create_session(payload.filename);
+    ChunkHandler chunk_handler(payload.filename);
 
-    active_session->ensure_files_open();
+    ChunkMetadata chunk_md{
+        .op_type = is_removed ? OP_TYPE::REMOVE : OP_TYPE::ADD,
+        .offset = payload.offset,
+        .chunk_size = payload.chunk_size,
+        .old_chunk_size = 0,
+        .is_last_chunk = payload.is_last_chunk};
 
-    active_session->fill_gap_till_offset(payload.offset);
+    // now take the chunk data
+    std::string data = client.receiveSome(payload.chunk_size);
 
-    // skip the chunk on writing the file if removed
-    if (is_removed)
-        active_session->skip_removed_chunk(payload.offset, payload.chunk_size);
+    chunk_handler.save_chunk(chunk_md, data);
 
-    // in case of add then fetch data and add chunk
-    if (!is_removed)
+    if (!chunk_md.is_last_chunk)
     {
-        std::string data = client.receiveSome(payload.chunk_size);
-        active_session->add_chunk(data, payload.chunk_size);
+        Message &&msg = messenger.receive_json_message();
+
+        auto new_payload = std::get_if<AddRemoveChunkPayload>(&(msg.payload));
+
+        while (new_payload)
+        {
+            // now take the chunk data
+            std::string data = client.receiveSome(new_payload->chunk_size);
+
+            chunk_handler.save_chunk(chunk_md, data);
+
+            msg = messenger.receive_json_message();
+            new_payload = std::get_if<AddRemoveChunkPayload>(&(msg.payload));
+
+            if (new_payload->is_last_chunk)
+                break;
+        }
     }
 
-    // if this is the last chunk then append all rest of the data now
-    if (payload.is_last_chunk)
-        active_session->finalize_and_replace();
+    chunk_handler.finalize_file(working_dir + "/" + payload.filename);
 }
 
 void ServerMessageHandler::process_file_chunk(const SendChunkPayload &payload)
 {
-    get_or_create_session(payload.filename, true);
-
-    active_session->ensure_files_open();
-
-    std::string chunk_data = client.receiveSome(payload.chunk_size);
-
-    active_session->append_data(chunk_data);
 }
+
+void ServerMessageHandler::process_fetch_files(const std::vector<std::string> &files)
+{
+}
+
+// void ServerMessageHandler::process_fetch_modified_chunks() {}

@@ -133,6 +133,7 @@ struct SendChunkPayload
     std::string filename;
     size_t chunk_size;
     int chunk_no;
+    bool is_last_chunk;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE(SendChunkPayload, filename, chunk_size, chunk_no);
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(SendChunkPayload, filename, chunk_size, chunk_no,is_last_chunk);
 };

@@ -172,7 +172,7 @@ INITIAL_SYNC
 - handle_modified_files_sync_from_server
 . ask server to send these modified_chunks
 . send offset+old_chunk_size to get server's chunk
-
+. how will we handle random chunks from peer of a file?most probably in modified chunks case.
 
 FileChangeHandler
 {
@@ -216,4 +216,3 @@ private:
 };
 
 - our sender and receiver classes are bounded with client-server but sometimes we are required to use them in any client/server
-- like in this case
