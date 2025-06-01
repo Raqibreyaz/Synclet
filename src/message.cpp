@@ -23,6 +23,10 @@ std::string message_type_to_string(MessageType type)
         return "FILES_CREATE";
     case MessageType::FILES_REMOVE:
         return "FILES_REMOVE";
+    case MessageType::REQ_SNAP_VERSION:
+        return "REQ_SNAP_VERSION";
+    case MessageType::SNAP_VERSION:
+        return "SNAP_VERSION";
     case MessageType::REQ_SNAP:
         return "REQ_SNAP";
     case MessageType::SEND_CHUNK:
@@ -56,6 +60,10 @@ MessageType message_type_from_string(const std::string &type)
         return MessageType::FILES_CREATE;
     else if (type == "FILES_REMOVE")
         return MessageType::FILES_REMOVE;
+    else if (type == "REQ_SNAP_VERSION")
+        return MessageType::REQ_SNAP_VERSION;
+    else if (type == "SNAP_VERSION")
+        return MessageType::SNAP_VERSION;
     else if (type == "REQ_SNAP")
         return MessageType::REQ_SNAP;
     else if (type == "SEND_CHUNK")
@@ -97,6 +105,14 @@ void from_json(const json &j, Message &m)
 
     switch (m.type)
     {
+    case MessageType::REQ_SNAP_VERSION:
+        m.payload = std::monostate{};
+        break;
+
+    case MessageType::SNAP_VERSION:
+        m.payload = payload_json.get<SnapVersionPayload>();
+        break;
+
     case MessageType::REQ_SNAP:
         m.payload = std::monostate{};
         break;

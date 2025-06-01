@@ -16,11 +16,11 @@
 #define DATA_DIR "./data"
 #define SNAP_FILE "./snap-file.json"
 
-std::function<void()> signal_handler = nullptr;
+std::function<void(int)> signal_handler = nullptr;
 void signal_handler_wrap(int sig)
 {
     if (signal_handler)
-        signal_handler();
+        signal_handler(sig);
 }
 
 int main()
@@ -28,17 +28,24 @@ int main()
     SnapshotManager snap_manager(DATA_DIR, SNAP_FILE);
 
     // fetch the snaps from SNAP_FILE
-    auto snaps = snap_manager.load_snapshot();
+    auto &&[snap_version, snaps] = snap_manager.load_snapshot();
 
+    // create and save snaps when no snaps present
     if (snaps.empty())
-        snaps = snap_manager.scan_directory();
+    {
+        auto &&p = snap_manager.scan_directory();
+        snap_version = p.first;
+        snaps = p.second;
+
+        snap_manager.save_snapshot(snaps);
+    }
 
     // create a server on localhost
     TcpServer server("127.0.0.1", std::to_string(PORT));
     TcpConnection client = server.acceptClient();
     Messenger messenger(client);
 
-    signal_handler = [&client]()
+    signal_handler = [&client](int _)
     {
         client.closeConnection();
         exit(EXIT_SUCCESS);
@@ -160,6 +167,8 @@ int main()
             msg.payload = std::move(payload);
 
             messenger.send_json_message(msg);
+
+            break;
         }
 
         case MessageType::REQ_DOWNLOAD_FILES:
@@ -172,7 +181,7 @@ int main()
                 break;
             }
 
-            payload->files;
+            // payload->files;
         }
 
         default:

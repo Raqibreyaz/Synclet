@@ -64,6 +64,15 @@
     "typeinfo": "cpp",
     "valarray": "cpp",
     "variant": "cpp",
-    "text_encoding": "cpp"
+    "text_encoding": "cpp",
+    "condition_variable": "cpp",
+    "list": "cpp",
+    "socket": "cpp",
+    "timer": "cpp",
+    "buffer": "cpp",
+    "executor": "cpp",
+    "internet": "cpp",
+    "io_context": "cpp",
+    "netfwd": "cpp"
   }
 }

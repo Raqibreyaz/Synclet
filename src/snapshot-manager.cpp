@@ -114,10 +114,14 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
 }
 
 // Scan a directory and build a snapshot of all files and their chunks
-DirSnapshot SnapshotManager::scan_directory()
+std::pair<std::string, DirSnapshot> SnapshotManager::scan_directory()
 {
-    // to store all the snapshots of files
-    DirSnapshot snapshots;
+    // for calculating snap_version
+    std::stringstream ss;
+
+    std::vector<std::pair<std::string, FileSnapshot>> sorted_snaps;
+
+    // first store all the files snaps in vector
     for (const auto &entry : fs::directory_iterator(data_dir_path))
     {
         // file should be normal file , !socket, !directory
@@ -127,11 +131,28 @@ DirSnapshot SnapshotManager::scan_directory()
         // full path required for opening file
         FileSnapshot &&snapshot = createSnapshot(entry.path().string());
 
-        // store the snapshot
-        snapshots[extract_filename_from_path(entry.path().string())] = std::move(snapshot);
+        sorted_snaps.push_back(std::make_pair(snapshot.filename, std::move(snapshot)));
     }
 
-    return snapshots;
+    // now sort the vector
+    std::sort(sorted_snaps.begin(), sorted_snaps.end(), [](const auto &file_a, const auto &file_b)
+              { return file_a.first < file_b.first; });
+
+    for (const auto &[filename, file_snap] : sorted_snaps)
+    {
+        ss << filename << "|" << file_snap.file_size << "|" << file_snap.mtime;
+
+        for (const auto &[_, chunk] : file_snap.chunks)
+        {
+            ss << "|" << chunk.offset << ":" << chunk.chunk_size << ":" << chunk.hash;
+        }
+    }
+
+    std::pair<std::string, DirSnapshot> p;
+    p.first = create_hash(std::vector<char>(ss.str().begin(), ss.str().end()));
+    p.second = DirSnapshot(sorted_snaps.begin(), sorted_snaps.end());
+
+    return p;
 }
 
 // Compare two snapshots and return changed/added/deleted files
@@ -302,15 +323,25 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
 // will save the snapshots as json in the file
 void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
 {
-    json j = json::array();
+    json j = json::object();
+    json files = json::array();
 
-    for (const auto &[filename, snap] : snaps)
+    std::vector<std::pair<std::string, FileSnapshot>> sorted_snaps(snaps.begin(), snaps.end());
+
+    std::sort(sorted_snaps.begin(), sorted_snaps.end(), [](const auto &snap_a, const auto &snap_b)
+              { return snap_a.first < snap_b.first; });
+
+    std::stringstream ss;
+
+    for (const auto &[filename, snap] : sorted_snaps)
     {
         json file_json;
         file_json["filename"] = snap.filename;
         file_json["size"] = snap.file_size;
         file_json["mtime"] = snap.mtime;
         file_json["chunks"] = json::array();
+
+        ss << filename << "|" << snap.file_size << "|" << snap.mtime;
 
         for (const auto &[_, chunk] : snap.chunks)
         {
@@ -319,9 +350,18 @@ void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
                             {"size", chunk.chunk_size},
                             {"hash", chunk.hash},
                             {"chunk_no", chunk.chunk_no}});
+
+            ss << "|" << chunk.offset << ":" << chunk.chunk_size << ":" << chunk.hash;
         }
-        j.push_back(file_json);
+
+        ss << "\n";
+
+        files.push_back(file_json);
     }
+
+    j["version"] = create_hash(
+        std::vector<char>(ss.str().begin(), ss.str().end()));
+    j["files"] = std::move(files);
 
     std::ofstream file(snap_file_path, std::ios::out);
 
@@ -333,7 +373,7 @@ void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
 }
 
 // will load the saved file snaps from json
-DirSnapshot SnapshotManager::load_snapshot()
+std::pair<std::string, DirSnapshot> SnapshotManager::load_snapshot()
 {
     std::ifstream file(snap_file_path);
 
@@ -342,19 +382,19 @@ DirSnapshot SnapshotManager::load_snapshot()
     if (!file.is_open())
     {
         std::cerr << "snap file file does not exist, returning default values" << std::endl;
-        return snapshots;
+        return std::make_pair("", snapshots);
     }
     if (fs::file_size(snap_file_path) == 0)
     {
         std::cerr << "snap file is empty, returning default values" << std::endl;
-        return snapshots;
+        return std::make_pair("", snapshots);
     }
 
     json j;
 
     file >> j;
 
-    for (const auto &file_json : j)
+    for (const auto &file_json : j["files"])
     {
         const std::string filename = file_json["filename"].get<std::string>();
         const uint64_t file_size = file_json["size"].get<uint64_t>();
@@ -376,5 +416,5 @@ DirSnapshot SnapshotManager::load_snapshot()
         snapshots[filename] = FileSnapshot(filename, file_size, mtime, chunks);
     }
 
-    return snapshots;
+    return std::make_pair(j["version"].get<std::string>(), snapshots);
 }

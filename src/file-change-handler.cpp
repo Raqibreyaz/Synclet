@@ -8,17 +8,14 @@ void FileChangeHandler::handle_event(const FileEvent &event, DirSnapshot &curr_s
     switch (event.event_type)
     {
     case EventType::CREATED:
-        handle_create_file(curr_snap.at(extract_filename_from_path(event.filepath)));
-        break;
+        return handle_create_file(
+            curr_snap.at(extract_filename_from_path(event.filepath)));
     case EventType::RENAMED:
-        handle_rename_file(event);
-        break;
+        return handle_rename_file(event);
     case EventType::DELETED:
-        handle_delete_file(event);
-        break;
+        return handle_delete_file(event);
     case EventType::MODIFIED:
-        handle_modify_file(event, curr_snap);
-        break;
+        return handle_modify_file(event, curr_snap);
     default:
         throw std::runtime_error("invalid file event found!!");
     }
@@ -135,7 +132,7 @@ void FileChangeHandler::handle_delete_file(const std::vector<std::string> &files
 
     msg.type = MessageType::FILES_REMOVE;
     FilesCreatedPayload payload;
-    payload.files = std::move(files);
+    payload.files = files;
     msg.payload = std::move(payload);
 
     messenger.send_json_message(msg);

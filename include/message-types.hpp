@@ -19,6 +19,8 @@ enum class MessageType
     FILE_RENAME,
     FILES_CREATE,
     FILES_REMOVE,
+    REQ_SNAP_VERSION,
+    SNAP_VERSION,
     REQ_SNAP,           // client asks server to send snap
     DATA_SNAP,          // server replies with the snap
     REQ_DOWNLOAD_FILES, // client needs to or download files
@@ -64,6 +66,12 @@ struct Files
     std::vector<std::string> files;
 
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Files, files);
+};
+
+struct SnapVersionPayload{
+    std::string snap_version;
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(SnapVersionPayload,snap_version);
 };
 
 struct FilesCreatedPayload : Files

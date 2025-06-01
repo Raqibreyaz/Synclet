@@ -11,6 +11,7 @@ using PayloadVariant = std::variant<
     FileRenamePayload,
     FilesCreatedPayload,
     FilesRemovedPayload,
+    SnapVersionPayload,
     DataSnapshotPayload,
     RequestDownloadFilesPayload,
     SendChunkPayload

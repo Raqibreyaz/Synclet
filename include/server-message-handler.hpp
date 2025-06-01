@@ -15,7 +15,6 @@ public:
     void process_delete_file(const FilesRemovedPayload &payload);
     void process_file_rename(const FileRenamePayload &payload);
     void process_file_chunk(const SendChunkPayload &payload);
-    void process_snapshot_request();
 
 private:
     std::string working_dir;

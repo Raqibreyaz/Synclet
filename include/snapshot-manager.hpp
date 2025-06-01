@@ -41,7 +41,7 @@ public:
     static FileSnapshot createSnapshot(const std::string &file_path);
 
     // Scan a directory and build a snapshot of all files and their chunks
-    DirSnapshot scan_directory();
+    std::pair<std::string,DirSnapshot> scan_directory();
 
     // Compare two snapshots and return changed/added/deleted chunks
     DirChanges compare_snapshots(
@@ -54,7 +54,7 @@ public:
     void save_snapshot(const DirSnapshot &snaps);
 
     // Deserialize snapshot from file
-    DirSnapshot load_snapshot();
+    std::pair<std::string,DirSnapshot> load_snapshot();
 
 private:
     fs::path data_dir_path;

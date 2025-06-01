@@ -51,11 +51,18 @@ Message Messenger::receive_json_message() const
     // receive exact message bytes
     std::string message = client.receiveSome(json_len);
 
-    // parse the json string to json object
-    j = json::parse(message);
+    if (!message.empty())
+    {
+        // parse the json string to json object
+        j = json::parse(message);
 
-    // parse json string to normal message object
-    from_json(j, msg);
+        // parse json string to normal message object
+        from_json(j, msg);
+    }
+    else
+    {
+        msg.payload = std::monostate{};
+    }
 
     return msg;
 }

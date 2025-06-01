@@ -105,6 +105,27 @@ PAYLOAD:{
 }
 raw_data: yes
 
+
+Saved_Snapshot:
+{
+    version: created by filename|file_size|modified_time|chunk_offset:chunk_size:chunk_hash,
+    files:[
+        {
+            filename,
+            size,
+            mtime,
+            chunks:[
+                {
+                    chunk_no,
+                    hash,
+                    offset,
+                    chunk_size
+                }
+            ]
+        }
+    ]
+}
+
 chunks:[
     {offset: 10,size:10}
     {offset: 30,size:40}
@@ -130,6 +151,69 @@ chunks:[
 
 INITIAL_SYNC
 - client request server to send its snapshot REQ_SNAP as client initially will not have a snap-file.json for server's snap ✅
+- snap-file.json is a sign that previously our client has synced to server ✅
+- if snap-file.json already present then client will ask server to send the snap_version to identify if the snap is up to date ✅
 - on getting snap, client will compare its snap and server's  ✅
-- if client has not any data then will ask server REQ_DATA
-- if client found changes to sync to server then directly send changes in bulk ✅
+- if files are created at client side then will always be synced to server 
+- if files are not available at client but available at server,there can be 2 causes either all files are deleted at client or client is not up to date with server's data
+. so if client was not up to date with server's data then fetch all the required files from server
+. if client is up to date then request server to delete that files too!
+- if files are modified then again there can be 2 cases either client has made changes in the files or client was not updated with server's changes
+. if client has made changes then sync the changes to server
+. if client was not up to date with server's changes then update client's files with server's
+- handle_created_files_sync
+. just send the files to server
+- handle_delete_files_sync
+. just tell server to delete these files
+- handle_deleted_files_download_from_server
+. ask server to send these files
+- handle_modified_files_sync
+. send the modified_chunks to server
+- handle_modified_files_sync_from_server
+. ask server to send these modified_chunks
+. send offset+old_chunk_size to get server's chunk
+
+
+FileChangeHandler
+{
+public:
+    FileChangeHandler(const Messenger &messenger, const std::string &working_dir);
+    handle_event(const FileEvent &event, DirSnapshot &curr_snap) const;
+    andle_changes(const DirChanges &dir_changes) const;
+
+private:
+    const Messenger &messenger;
+    const std::string working_dir;
+    void handle_create_file(const FileSnapshot &file_snap) const;
+    handle_delete_file(const FileEvent &event) const;
+    handle_create_file(const std::vector<FileSnapshot> &files) const;
+    handle_delete_file(const std::vector<std::string> &files) const;
+    handle_rename_file(const FileEvent &event) const;
+    handle_modify_file(const FileEvent &event, DirSnapshot &snap) const;
+    handle_modify_file(const std::vector<FileModification> &modified_files) const;
+    handle_file_sync(const FileSnapshot &file_snap) const;
+    handle_file_modification_sync(const FileModification &file_modification) const;
+};
+
+ServerMessageHandler
+{
+public:
+    ServerMessageHandler(const std::string &working_dir, TcpConnection &client);
+    process_modified_chunk(const ModifiedChunkPayload &payload);
+    process_add_remove_chunk(const AddRemoveChunkPayload &payload, const bool is_removed = false);
+    process_create_file(const FileCreateRemovePayload &payload);
+    process_create_file(const FilesCreatedPayload &payload);
+    process_delete_file(const FileCreateRemovePayload &payload);
+    process_delete_file(const FilesRemovedPayload &payload);
+    process_file_rename(const FileRenamePayload &payload);
+    process_file_chunk(const SendChunkPayload &payload);
+
+private:
+    std::string working_dir;
+    TcpConnection &client;
+    std::unique_ptr<FilePairSession> active_session;
+    void get_or_create_session(const std::string &filename,const bool append_to_original = false);
+};
+
+- our sender and receiver classes are bounded with client-server but sometimes we are required to use them in any client/server
+- like in this case
