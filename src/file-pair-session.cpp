@@ -45,8 +45,8 @@ void FilePairSession::reset_if_filepath_changes_append_required(const std::strin
 // Fills gap in temp_file if present from the offset
 void FilePairSession::fill_gap_till_offset(const size_t offset)
 {
-    // skip if there is no gap to be filled
-    if (offset <= cursor)
+    // skip if there is no gap to be filled or temp_file not exists
+    if (offset <= cursor && !temp_file)
         return;
 
     // data copied to be filled
@@ -62,14 +62,24 @@ void FilePairSession::fill_gap_till_offset(const size_t offset)
 // append chunk data to original file
 void FilePairSession::append_data(const std::string &chunk)
 {
-    original_file->append_chunk(chunk);
+    if (is_appending_to_original())
+        original_file->append_chunk(chunk);
 }
 
 // chunk_size can be != chunk.size as in case of modify we will be replacing data of differet size
-void FilePairSession::add_chunk(const std::string &chunk, const size_t chunk_size)
+void FilePairSession::add_chunk(const std::string &chunk, const size_t chunk_size, const bool is_new_chunk)
 {
+    if (!temp_file)
+    {
+        std::cerr << "failed to add chunk! temp_file not exists" << std::endl;
+        return;
+    }
+
     temp_file->append_chunk(chunk);
-    cursor += chunk_size;
+
+    // since the chunk was not previously present so no need to move the original file cursor
+    if (!is_new_chunk)
+        cursor += chunk_size;
 }
 
 // skip the given chunk from writing to temp_file
@@ -82,10 +92,13 @@ void FilePairSession::skip_removed_chunk(const size_t offset, const size_t chunk
 // fill rest of the data from original file to temp_file + rename temp_file to original
 void FilePairSession::finalize_and_replace()
 {
-    fill_gap_till_offset(original_file->get_file_size() - 1);
+    if (temp_file)
+    {
+        fill_gap_till_offset(original_file->get_file_size() - 1);
 
-    fs::remove(original_filepath);
-    fs::rename(temp_filepath, original_filepath);
+        fs::remove(original_filepath);
+        fs::rename(temp_filepath, original_filepath);
+    }
 
     close_session();
 }
@@ -113,4 +126,8 @@ std::string FilePairSession::get_filepath()
 bool FilePairSession::is_appending_to_original()
 {
     return append_to_original;
+}
+
+FilePairSession::~FilePairSession(){
+    close_session();
 }

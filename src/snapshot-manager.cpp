@@ -138,6 +138,7 @@ std::pair<std::string, DirSnapshot> SnapshotManager::scan_directory()
     std::sort(sorted_snaps.begin(), sorted_snaps.end(), [](const auto &file_a, const auto &file_b)
               { return file_a.first < file_b.first; });
 
+    //  adding data for snap version
     for (const auto &[filename, file_snap] : sorted_snaps)
     {
         ss << filename << "|" << file_snap.file_size << "|" << file_snap.mtime;
@@ -148,11 +149,12 @@ std::pair<std::string, DirSnapshot> SnapshotManager::scan_directory()
         }
     }
 
-    std::pair<std::string, DirSnapshot> p;
-    p.first = create_hash(std::vector<char>(ss.str().begin(), ss.str().end()));
-    p.second = DirSnapshot(sorted_snaps.begin(), sorted_snaps.end());
+    std::clog << "size of snap version: " << ss.str().size() << std::endl;
 
-    return p;
+    const std::string &snap_str = ss.str();
+    return {
+        create_hash(std::vector<char>(snap_str.begin(), snap_str.end())),
+        DirSnapshot(sorted_snaps.begin(), sorted_snaps.end())};
 }
 
 // Compare two snapshots and return changed/added/deleted files
@@ -178,9 +180,7 @@ DirChanges SnapshotManager::compare_snapshots(
         {
             FileModification &&file_modification = get_file_modification(snap, prev_snap->second);
 
-            if (!(file_modification.added.empty()) ||
-                !(file_modification.modified.empty()) ||
-                !(file_modification.removed.empty()))
+            if (!(file_modification.modified_chunks.empty()))
                 changes.modified_files.push_back(std::move(file_modification));
         }
     }
@@ -200,9 +200,7 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
 {
     FileModification changes{
         .filename = file_curr_snap.filename,
-        .added = {},
-        .modified = {},
-        .removed = {}};
+        .modified_chunks = {}};
 
     std::unordered_map<uint64_t, ChunkInfo> prev_offset_map;
     std::unordered_map<uint64_t, ChunkInfo> curr_offset_map;
@@ -230,13 +228,13 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
             (offset_chunk_it == curr_offset_map.end() ||
              file_prev_snap.chunks.contains(offset_chunk_it->second.hash)))
         {
-            AddRemoveChunkPayload removed_chunk(
-                file_prev_snap.filename,
-                chunk.offset,
-                chunk.chunk_size,
-                false);
+            ModifiedChunkPayload removed_chunk(ChunkType::REMOVE,
+                                               file_prev_snap.filename,
+                                               chunk.offset,
+                                               chunk.chunk_size,
+                                               0, false);
 
-            changes.removed.push_back(std::move(removed_chunk));
+            changes.modified_chunks.push_back(std::move(removed_chunk));
         }
     }
 
@@ -255,12 +253,13 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
             (offset_chunk_it == prev_offset_map.end() ||
              file_curr_snap.chunks.contains(offset_chunk_it->second.hash)))
         {
-            AddRemoveChunkPayload added_chunk(file_curr_snap.filename,
-                                              chunk.offset,
-                                              chunk.chunk_size,
-                                              false);
+            ModifiedChunkPayload added_chunk(ChunkType::ADD,
+                                             file_curr_snap.filename,
+                                             chunk.offset,
+                                             chunk.chunk_size,
+                                             0, false);
 
-            changes.added.push_back(std::move(added_chunk));
+            changes.modified_chunks.push_back(std::move(added_chunk));
         }
     }
 
@@ -275,47 +274,29 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
             !(file_prev_snap.chunks.contains(chunk.hash)) &&
             !(file_curr_snap.chunks.contains(prev_offset_it->second.hash)))
         {
-            ModifiedChunkPayload modified_chunk(file_curr_snap.filename, offset, chunk.chunk_size, prev_offset_it->second.chunk_size, false);
+            ModifiedChunkPayload modified_chunk(ChunkType::MODIFY,
+                                                file_curr_snap.filename,
+                                                offset,
+                                                chunk.chunk_size,
+                                                prev_offset_it->second.chunk_size,
+                                                false);
 
-            changes.modified.push_back(std::move(modified_chunk));
+            changes.modified_chunks.push_back(std::move(modified_chunk));
         }
     }
 
+    // for marking last chunk we need to sort according to offset
     const auto offset_sort = [](const auto &a, const auto &b) -> bool
     {
         return a.offset < b.offset;
     };
-    // see before sorting
-    std::sort(changes.added.begin(),
-              changes.added.end(),
+    std::sort(changes.modified_chunks.begin(),
+              changes.modified_chunks.end(),
               offset_sort);
 
-    std::sort(changes.modified.begin(),
-              changes.modified.end(),
-              offset_sort);
-
-    std::sort(changes.removed.begin(),
-              changes.removed.end(),
-              offset_sort);
-    // see after sorting
-    const auto get_last_offset = [](const auto &vec) -> uint64_t
-    {
-        return vec.empty() ? 0 : vec.back().offset;
-    };
-
-    size_t max_offset = std::max({get_last_offset(changes.added),
-                                  get_last_offset(changes.removed),
-                                  get_last_offset(changes.modified)});
-
-    // mark last chunk which has max_offset of the file
-    const auto mark_last = [&](auto &vec)
-    {
-        if (!(vec.empty()) && vec.back().offset == max_offset)
-            vec.back().is_last_chunk = true;
-    };
-    mark_last(changes.added);
-    mark_last(changes.modified);
-    mark_last(changes.removed);
+    //   now mark last chunk
+    if (!changes.modified_chunks.empty())
+        changes.modified_chunks.back().is_last_chunk = true;
 
     return changes;
 }
@@ -359,8 +340,10 @@ void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
         files.push_back(file_json);
     }
 
+    const std::string &snap_str = ss.str();
+
     j["version"] = create_hash(
-        std::vector<char>(ss.str().begin(), ss.str().end()));
+        std::vector<char>(snap_str.begin(), snap_str.end()));
     j["files"] = std::move(files);
 
     std::ofstream file(snap_file_path, std::ios::out);

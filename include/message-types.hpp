@@ -12,8 +12,6 @@ using json = nlohmann::json;
 enum class MessageType
 {
     MODIFIED_CHUNK,
-    ADDED_CHUNK,
-    REMOVED_CHUNK,
     FILE_CREATE,
     FILE_REMOVE,
     FILE_RENAME,
@@ -24,7 +22,15 @@ enum class MessageType
     REQ_SNAP,           // client asks server to send snap
     DATA_SNAP,          // server replies with the snap
     REQ_DOWNLOAD_FILES, // client needs to or download files
-    SEND_CHUNK          // for sending entire files by chunk
+    REQ_CHUNK,
+    SEND_CHUNK,          // for sending entire files by chunk
+};
+
+enum class ChunkType : uint8_t
+{
+    ADD = 0x01,
+    REMOVE,
+    MODIFY
 };
 
 // info of chunk
@@ -68,10 +74,11 @@ struct Files
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Files, files);
 };
 
-struct SnapVersionPayload{
+struct SnapVersionPayload
+{
     std::string snap_version;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE(SnapVersionPayload,snap_version);
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(SnapVersionPayload, snap_version);
 };
 
 struct FilesCreatedPayload : Files
@@ -92,25 +99,18 @@ struct FileRenamePayload
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(FileRenamePayload, old_filename, new_filename);
 };
 
-struct AddRemoveChunkPayload
+struct ModifiedChunkPayload 
 {
+    ChunkType chunk_type;
     std::string filename;
     size_t offset;
     size_t chunk_size;
-    bool is_last_chunk;
-    AddRemoveChunkPayload();
-    AddRemoveChunkPayload(const std::string &filename, const size_t offset, const size_t chunk_size, const bool is_last_chunk);
-
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE(AddRemoveChunkPayload, filename, offset, chunk_size, is_last_chunk);
-};
-
-struct ModifiedChunkPayload : AddRemoveChunkPayload
-{
     size_t old_chunk_size;
+    bool is_last_chunk;
     ModifiedChunkPayload();
-    ModifiedChunkPayload(const std::string &filename, const size_t offset, const size_t chunk_size, const size_t old_chunk_size, const bool is_last_chunk);
+    ModifiedChunkPayload(const ChunkType chunk_type,const std::string &filename, const size_t offset, const size_t chunk_size, const size_t old_chunk_size, const bool is_last_chunk);
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE(ModifiedChunkPayload, filename, offset, chunk_size, old_chunk_size, is_last_chunk);
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(ModifiedChunkPayload,chunk_type, filename, offset, chunk_size, old_chunk_size, is_last_chunk);
 };
 
 // sends snapshot of all the files
@@ -127,6 +127,14 @@ struct RequestDownloadFilesPayload : Files
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(RequestDownloadFilesPayload, files);
 };
 
+struct RequestChunkPayload{
+    std::string filename;
+    size_t offset;
+    size_t chunk_size;
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(RequestChunkPayload,filename,offset,chunk_size);
+};
+
 // will only required for sending whole files
 struct SendChunkPayload
 {
@@ -135,5 +143,5 @@ struct SendChunkPayload
     int chunk_no;
     bool is_last_chunk;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE(SendChunkPayload, filename, chunk_size, chunk_no,is_last_chunk);
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(SendChunkPayload, filename, chunk_size, chunk_no, is_last_chunk);
 };

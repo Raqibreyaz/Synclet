@@ -7,18 +7,13 @@
 #include <set>
 #include <charconv>
 #include "file-pair-session.hpp"
+#include "message-types.hpp"
 
-enum class OP_TYPE : uint8_t
-{
-    ADD = 0x01,
-    REMOVE = 0x02,
-    MODIFY = 0x03
-};
-
+// disabling padding to align each one by one
 #pragma pack(push, 1)
 struct ChunkMetadata
 {
-    OP_TYPE op_type;
+    ChunkType chunk_type;
     uint64_t offset;
     uint64_t chunk_size;
     uint64_t old_chunk_size;

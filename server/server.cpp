@@ -10,7 +10,8 @@
 #include "../include/messenger.hpp"
 #include "../include/message-types.hpp"
 #include "../include/message.hpp"
-#include "../include/server-message-handler.hpp"
+#include "../include/sender-message-handler.hpp"
+#include "../include/receiver-message-handler.hpp"
 
 #define PORT 9000
 #define DATA_DIR "./data"
@@ -27,166 +28,152 @@ int main()
 {
     SnapshotManager snap_manager(DATA_DIR, SNAP_FILE);
 
-    // fetch the snaps from SNAP_FILE
-    auto &&[snap_version, snaps] = snap_manager.load_snapshot();
-
-    // create and save snaps when no snaps present
-    if (snaps.empty())
+    try
     {
-        auto &&p = snap_manager.scan_directory();
-        snap_version = p.first;
-        snaps = p.second;
+        // fetch the snaps from SNAP_FILE
+        auto &&[snap_version, snaps] = snap_manager.scan_directory();
 
-        snap_manager.save_snapshot(snaps);
-    }
+        // create a server on localhost
+        TcpServer server("127.0.0.1", std::to_string(PORT));
+        TcpConnection client = server.acceptClient();
+        Messenger messenger(client);
 
-    // create a server on localhost
-    TcpServer server("127.0.0.1", std::to_string(PORT));
-    TcpConnection client = server.acceptClient();
-    Messenger messenger(client);
-
-    signal_handler = [&client](int _)
-    {
-        client.closeConnection();
-        exit(EXIT_SUCCESS);
-    };
-
-    signal(SIGINT, signal_handler_wrap);
-
-    ServerMessageHandler message_handler(DATA_DIR, client);
-
-    while (true)
-    {
-        Message &&msg = messenger.receive_json_message();
-
-        std::clog << "message type is: " << message_type_to_string(msg.type);
-
-        switch (msg.type)
+        signal_handler = [&client](int _)
         {
-        case MessageType::FILE_CREATE:
+            client.closeConnection();
+            exit(EXIT_SUCCESS);
+        };
+
+        signal(SIGINT, signal_handler_wrap);
+
+        ReceiverMessageHandler receiver_message_handler(DATA_DIR, messenger);
+        SenderMessageHandler sender_message_handler(messenger, DATA_DIR);
+
+        while (true)
         {
-            auto payload = std::get_if<FileCreateRemovePayload>(&(msg.payload));
-            if (payload)
-                message_handler.process_create_file(*payload);
-            else
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
-            break;
-        }
+            const Message &msg = messenger.receive_json_message();
 
-        case MessageType::FILE_REMOVE:
-        {
-            auto payload = std::get_if<FileCreateRemovePayload>(&(msg.payload));
-            if (payload)
-                message_handler.process_delete_file(*payload);
-            else
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
-            break;
-        }
+            std::clog << "message type is: " << message_type_to_string(msg.type);
 
-        case MessageType::FILES_CREATE:
-        {
-            auto payload = std::get_if<FilesCreatedPayload>(&(msg.payload));
-
-            if (payload)
-                message_handler.process_create_file(*payload);
-            else
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
-
-            break;
-        }
-
-        case MessageType::FILES_REMOVE:
-        {
-            auto payload = std::get_if<FilesRemovedPayload>(&(msg.payload));
-            if (payload)
-                message_handler.process_delete_file(*payload);
-            else
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
-            break;
-        }
-
-        case MessageType::FILE_RENAME:
-        {
-            auto payload = std::get_if<FileRenamePayload>(&(msg.payload));
-            if (payload)
-                message_handler.process_file_rename(*payload);
-            else
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
-            break;
-        }
-
-        case MessageType::MODIFIED_CHUNK:
-        {
-            auto payload = std::get_if<ModifiedChunkPayload>(&(msg.payload));
-            if (payload)
-                message_handler.process_modified_chunk(*payload);
-            else
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
-            break;
-        }
-
-        case MessageType::ADDED_CHUNK:
-        {
-            auto payload = std::get_if<AddRemoveChunkPayload>(&(msg.payload));
-            if (payload)
-                message_handler.process_add_remove_chunk(*payload, false);
-            else
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
-            break;
-        }
-
-        case MessageType::REMOVED_CHUNK:
-        {
-            auto payload = std::get_if<AddRemoveChunkPayload>(&(msg.payload));
-            if (payload)
-                message_handler.process_add_remove_chunk(*payload, true);
-            else
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
-            break;
-        }
-
-        case MessageType::SEND_CHUNK:
-        {
-            auto payload = std::get_if<SendChunkPayload>(&(msg.payload));
-            if (payload)
-                message_handler.process_file_chunk(*payload);
-            else
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
-            break;
-        }
-
-        case MessageType::REQ_SNAP:
-        {
-            DataSnapshotPayload payload;
-            payload.files.reserve(snaps.size());
-
-            for (const auto &[_, file_snap] : snaps)
-                payload.files.push_back(file_snap);
-
-            msg.type = MessageType::DATA_SNAP;
-            msg.payload = std::move(payload);
-
-            messenger.send_json_message(msg);
-
-            break;
-        }
-
-        case MessageType::REQ_DOWNLOAD_FILES:
-        {
-            auto payload = std::get_if<RequestDownloadFilesPayload>(&(msg.payload));
-
-            if (!payload)
+            switch (msg.type)
             {
-                std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+
+            // create file and receive data
+            case MessageType::FILE_CREATE:
+            {
+                auto payload = std::get_if<FileCreateRemovePayload>(&(msg.payload));
+                if (payload)
+                    receiver_message_handler.process_create_file(*payload);
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
                 break;
             }
 
-            // payload->files;
-        }
+            // remove the given file
+            case MessageType::FILE_REMOVE:
+            {
+                if (auto payload = std::get_if<FileCreateRemovePayload>(&(msg.payload)))
+                    receiver_message_handler.process_delete_file(*payload);
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+                break;
+            }
 
-        default:
-            break;
+            // create the given files and append provided data to them
+            case MessageType::FILES_CREATE:
+            {
+                if (auto payload = std::get_if<FilesCreatedPayload>(&(msg.payload)))
+                    receiver_message_handler.process_create_file(*payload);
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+
+                break;
+            }
+
+            // remove given files
+            case MessageType::FILES_REMOVE:
+            {
+                if (auto payload = std::get_if<FilesRemovedPayload>(&(msg.payload)))
+                    receiver_message_handler.process_delete_file(*payload);
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+                break;
+            }
+
+            // rename the given file
+            case MessageType::FILE_RENAME:
+            {
+                if (auto payload = std::get_if<FileRenamePayload>(&(msg.payload)))
+                    receiver_message_handler.process_file_rename(*payload);
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+                break;
+            }
+
+            // save the modified chunk in corresponding file
+            case MessageType::MODIFIED_CHUNK:
+            {
+                if (auto payload = std::get_if<ModifiedChunkPayload>(&(msg.payload)))
+                    receiver_message_handler.process_modified_chunk(*payload);
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+                break;
+            }
+
+            // append the given chunk in corresponding file
+            case MessageType::SEND_CHUNK:
+            {
+                if (auto payload = std::get_if<SendChunkPayload>(&(msg.payload)))
+                    receiver_message_handler.process_file_chunk(*payload);
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+                break;
+            }
+
+            // send the snapshot version to peer as per request
+            case MessageType::REQ_SNAP_VERSION:
+            {
+                sender_message_handler.handle_request_snap_version(snap_version);
+                break;
+            }
+
+            // send the whole snapshot to peer as per request
+            case MessageType::REQ_SNAP:
+            {
+                sender_message_handler.handle_request_snap(snaps);
+                break;
+            }
+
+            // send the requested chunk to peer
+            case MessageType::REQ_CHUNK:
+            {
+                if (auto payload = std::get_if<RequestChunkPayload>(&(msg.payload)))
+                    sender_message_handler.handle_request_chunk(*payload);
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+                break;
+            }
+
+            // send the requested files to peer
+            case MessageType::REQ_DOWNLOAD_FILES:
+            {
+                if (auto payload = std::get_if<RequestDownloadFilesPayload>(&(msg.payload)))
+                    sender_message_handler.handle_request_download_files(*payload, snaps);
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
+                break;
+            }
+
+            default:
+                std::cerr << "unknown message type found" << std::endl;
+                break;
+            }
         }
     }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+
     return 0;
 }

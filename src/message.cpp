@@ -13,9 +13,6 @@ std::string message_type_to_string(MessageType type)
         return "FILE_RENAME";
     case MessageType::MODIFIED_CHUNK:
         return "MODIFIED_CHUNK";
-    case MessageType::REMOVED_CHUNK:
-        return "REMOVED_CHUNK";
-    case MessageType::ADDED_CHUNK:
         return "ADDED_CHUNK";
     case MessageType::DATA_SNAP:
         return "DATA_SNAP";
@@ -29,6 +26,8 @@ std::string message_type_to_string(MessageType type)
         return "SNAP_VERSION";
     case MessageType::REQ_SNAP:
         return "REQ_SNAP";
+    case MessageType::REQ_CHUNK:
+        return "REQ_CHUNK";
     case MessageType::SEND_CHUNK:
         return "SEND_CHUNK";
     case MessageType::REQ_DOWNLOAD_FILES:
@@ -44,16 +43,12 @@ MessageType message_type_from_string(const std::string &type)
 {
     if (type == "MODIFIED_CHUNK")
         return MessageType::MODIFIED_CHUNK;
-    else if (type == "REMOVED_CHUNK")
-        return MessageType::REMOVED_CHUNK;
     else if (type == "FILE_CREATE")
         return MessageType::FILE_CREATE;
     else if (type == "FILE_REMOVE")
         return MessageType::FILE_REMOVE;
     else if (type == "FILE_RENAME")
         return MessageType::FILE_RENAME;
-    else if (type == "ADDED_CHUNK")
-        return MessageType::ADDED_CHUNK;
     else if (type == "DATA_SNAP")
         return MessageType::DATA_SNAP;
     else if (type == "FILES_CREATE")
@@ -66,6 +61,8 @@ MessageType message_type_from_string(const std::string &type)
         return MessageType::SNAP_VERSION;
     else if (type == "REQ_SNAP")
         return MessageType::REQ_SNAP;
+    else if (type == "REQ_CHUNK")
+        return MessageType::REQ_CHUNK;
     else if (type == "SEND_CHUNK")
         return MessageType::SEND_CHUNK;
     else if (type == "REQ_DOWNLOAD_FILES")
@@ -133,14 +130,6 @@ void from_json(const json &j, Message &m)
         m.payload = payload_json.get<ModifiedChunkPayload>();
         break;
 
-    case MessageType::REMOVED_CHUNK:
-        m.payload = payload_json.get<AddRemoveChunkPayload>();
-        break;
-
-    case MessageType::ADDED_CHUNK:
-        m.payload = payload_json.get<AddRemoveChunkPayload>();
-        break;
-
     case MessageType::DATA_SNAP:
         m.payload = payload_json.get<DataSnapshotPayload>();
         break;
@@ -151,6 +140,10 @@ void from_json(const json &j, Message &m)
 
     case MessageType::FILES_REMOVE:
         m.payload = payload_json.get<FilesRemovedPayload>();
+        break;
+
+    case MessageType::REQ_CHUNK:
+        m.payload = payload_json.get<RequestChunkPayload>();
         break;
 
     case MessageType::SEND_CHUNK:

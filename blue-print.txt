@@ -173,46 +173,6 @@ INITIAL_SYNC
 . ask server to send these modified_chunks
 . send offset+old_chunk_size to get server's chunk
 . how will we handle random chunks from peer of a file?most probably in modified chunks case.
-
-FileChangeHandler
-{
-public:
-    FileChangeHandler(const Messenger &messenger, const std::string &working_dir);
-    handle_event(const FileEvent &event, DirSnapshot &curr_snap) const;
-    andle_changes(const DirChanges &dir_changes) const;
-
-private:
-    const Messenger &messenger;
-    const std::string working_dir;
-    void handle_create_file(const FileSnapshot &file_snap) const;
-    handle_delete_file(const FileEvent &event) const;
-    handle_create_file(const std::vector<FileSnapshot> &files) const;
-    handle_delete_file(const std::vector<std::string> &files) const;
-    handle_rename_file(const FileEvent &event) const;
-    handle_modify_file(const FileEvent &event, DirSnapshot &snap) const;
-    handle_modify_file(const std::vector<FileModification> &modified_files) const;
-    handle_file_sync(const FileSnapshot &file_snap) const;
-    handle_file_modification_sync(const FileModification &file_modification) const;
-};
-
-ServerMessageHandler
-{
-public:
-    ServerMessageHandler(const std::string &working_dir, TcpConnection &client);
-    process_modified_chunk(const ModifiedChunkPayload &payload);
-    process_add_remove_chunk(const AddRemoveChunkPayload &payload, const bool is_removed = false);
-    process_create_file(const FileCreateRemovePayload &payload);
-    process_create_file(const FilesCreatedPayload &payload);
-    process_delete_file(const FileCreateRemovePayload &payload);
-    process_delete_file(const FilesRemovedPayload &payload);
-    process_file_rename(const FileRenamePayload &payload);
-    process_file_chunk(const SendChunkPayload &payload);
-
-private:
-    std::string working_dir;
-    TcpConnection &client;
-    std::unique_ptr<FilePairSession> active_session;
-    void get_or_create_session(const std::string &filename,const bool append_to_original = false);
-};
-
-- our sender and receiver classes are bounded with client-server but sometimes we are required to use them in any client/server
+. if a chunk is deleted then fetch from peer
+. if a chunk is modified then fetch from peer
+. if a chunk is added then remove it
