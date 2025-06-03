@@ -94,8 +94,9 @@ int main()
 
         for (const auto &modified_file : dir_changes.modified_files)
         {
+            // more time_t -> more recent
             // if the current file is more older then fetch the modified chunks from peer
-            if (curr_snap[modified_file.filename].mtime > peer_snap[modified_file.filename].mtime)
+            if (curr_snap[modified_file.filename].mtime < peer_snap[modified_file.filename].mtime)
                 to_fetch.push_back(modified_file);
 
             // if current file is newer then sync changes to peer
@@ -104,10 +105,22 @@ int main()
         }
 
         // request peer to update these files
-        sender_message_handler.handle_modify_file(to_change);
+        if (!to_change.empty())
+            sender_message_handler.handle_modify_file(to_change);
 
         // request peer to send these updated chunks and save them
-        receiver_message_handler.process_fetch_modified_chunks(to_fetch);
+        if (!to_fetch.empty())
+            receiver_message_handler.process_fetch_modified_chunks(to_fetch);
+    }
+
+    // now after syncing all changes save the current snap as server's snap
+    if (!dir_changes.created_files.empty() || !dir_changes.modified_files.empty() || !dir_changes.removed_files.empty())
+    {
+        auto &&[sn_vers, snaps] = snap_manager.scan_directory();
+        curr_snap = peer_snap = snaps;
+        curr_snap_version = peer_snap_version = sn_vers;
+
+        snap_manager.save_snapshot(curr_snap);
     }
 
     const auto &peer_snap_list = receiver_message_handler.process_request_peer_snap();
@@ -122,7 +135,6 @@ int main()
         dir_changes.removed_files.empty())
     {
         std::clog << "successfully synced initial changes to server" << std::endl;
-        snap_manager.save_snapshot(curr_snap);
         exit(EXIT_SUCCESS);
     }
     else
@@ -138,6 +150,7 @@ int main()
     signal(SIGINT, signal_handler_wrap);
 
     // continuously watch for changes to sync
+    std::clog << "waiting for file changes..." << std::endl;
     while (true)
     {
         const auto &events = watcher.poll_events();

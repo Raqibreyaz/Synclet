@@ -8,6 +8,7 @@
 #include <charconv>
 #include "file-pair-session.hpp"
 #include "message-types.hpp"
+#include "utils.hpp"
 
 // disabling padding to align each one by one
 #pragma pack(push, 1)

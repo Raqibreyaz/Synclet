@@ -141,17 +141,21 @@ std::pair<std::string, DirSnapshot> SnapshotManager::scan_directory()
     //  adding data for snap version
     for (const auto &[filename, file_snap] : sorted_snaps)
     {
-        ss << filename << "|" << file_snap.file_size << "|" << file_snap.mtime;
+        ss << filename << "|" << file_snap.file_size;
 
         for (const auto &[_, chunk] : file_snap.chunks)
         {
             ss << "|" << chunk.offset << ":" << chunk.chunk_size << ":" << chunk.hash;
         }
+        ss << "||";
     }
 
-    std::clog << "size of snap version: " << ss.str().size() << std::endl;
+    std::string snap_str = ss.str();
 
-    const std::string &snap_str = ss.str();
+    // trimming last redundant ||
+    if (snap_str.size() >= 2 && snap_str.substr(snap_str.size() - 2) == "||")
+        snap_str.erase(snap_str.size() - 2);
+
     return {
         create_hash(std::vector<char>(snap_str.begin(), snap_str.end())),
         DirSnapshot(sorted_snaps.begin(), sorted_snaps.end())};
@@ -322,7 +326,7 @@ void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
         file_json["mtime"] = snap.mtime;
         file_json["chunks"] = json::array();
 
-        ss << filename << "|" << snap.file_size << "|" << snap.mtime;
+        ss << filename << "|" << snap.file_size;
 
         for (const auto &[_, chunk] : snap.chunks)
         {
@@ -335,12 +339,16 @@ void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
             ss << "|" << chunk.offset << ":" << chunk.chunk_size << ":" << chunk.hash;
         }
 
-        ss << "\n";
+        ss << "||";
 
         files.push_back(file_json);
     }
 
-    const std::string &snap_str = ss.str();
+    std::string snap_str = ss.str();
+
+    // remove last redundant ||
+    if (snap_str.size() >= 2 && snap_str.substr(snap_str.size() - 2) == "||")
+        snap_str.erase(snap_str.size() - 2);
 
     j["version"] = create_hash(
         std::vector<char>(snap_str.begin(), snap_str.end()));

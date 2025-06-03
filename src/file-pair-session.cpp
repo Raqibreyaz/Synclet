@@ -46,7 +46,7 @@ void FilePairSession::reset_if_filepath_changes_append_required(const std::strin
 void FilePairSession::fill_gap_till_offset(const size_t offset)
 {
     // skip if there is no gap to be filled or temp_file not exists
-    if (offset <= cursor && !temp_file)
+    if (offset <= cursor || !temp_file)
         return;
 
     // data copied to be filled
@@ -94,7 +94,7 @@ void FilePairSession::finalize_and_replace()
 {
     if (temp_file)
     {
-        fill_gap_till_offset(original_file->get_file_size() - 1);
+        fill_gap_till_offset(original_file->get_file_size());
 
         fs::remove(original_filepath);
         fs::rename(temp_filepath, original_filepath);
@@ -128,6 +128,7 @@ bool FilePairSession::is_appending_to_original()
     return append_to_original;
 }
 
-FilePairSession::~FilePairSession(){
+FilePairSession::~FilePairSession()
+{
     close_session();
 }

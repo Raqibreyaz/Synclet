@@ -53,7 +53,7 @@ int main()
         {
             const Message &msg = messenger.receive_json_message();
 
-            std::clog << "message type is: " << message_type_to_string(msg.type);
+            std::clog << "message type is: " << message_type_to_string(msg.type) << std::endl;
 
             switch (msg.type)
             {

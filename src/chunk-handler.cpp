@@ -44,8 +44,14 @@ std::pair<ChunkMetadata, std::string> ChunkHandler::read_chunk_file(uint64_t off
     // read the metadata
     chunk_file.read(reinterpret_cast<char *>(&chunk_md), sizeof(chunk_md));
 
+    // now resize the chunk_data var for getting whole chunk data
+    chunk_data.resize(chunk_md.chunk_type == ChunkType::MODIFY
+                          ? chunk_md.old_chunk_size
+                          : chunk_md.chunk_size);
+
     // read the data
-    chunk_file.read(chunk_data.data(), chunk_data.size());
+    if (chunk_md.chunk_type != ChunkType::REMOVE)
+        chunk_file.read(chunk_data.data(), chunk_data.size());
 
     // now close the chunk_file
     chunk_file.close();
@@ -65,7 +71,7 @@ void ChunkHandler::finalize_file(const std::string &original_filepath)
     // insert all the offset in set
     for (auto &entry : fs::recursive_directory_iterator(dir_name))
     {
-        auto filename = entry.path().string();
+        auto filename = extract_filename_from_path(entry.path().string());
         auto dash = filename.find('-');
         auto dot = filename.find('.');
         uint64_t offset;
@@ -79,7 +85,7 @@ void ChunkHandler::finalize_file(const std::string &original_filepath)
     for (auto offset : sorted_offset)
     {
         // read the chunk file
-       const auto &[chunk_md, chunk_data] = read_chunk_file(offset);
+        const auto &[chunk_md, chunk_data] = read_chunk_file(offset);
 
         // fill gap in temp_file using original_file data till offset reach
         file_session.fill_gap_till_offset(offset);

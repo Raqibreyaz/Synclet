@@ -234,10 +234,23 @@ void SenderMessageHandler::handle_request_snap(DirSnapshot &snapshot)
     messenger.send_json_message(msg);
 }
 
-// send the request chunk to peer
+// send the requested chunk to peer
 void SenderMessageHandler::handle_request_chunk(const RequestChunkPayload &payload)
 {
     FileIO fileio(working_dir + "/" + payload.filename);
+
+    const std::string &chunk_data = fileio.read_file_from_offset(payload.offset, payload.chunk_size);
+
+    const Message &msg{.type = MessageType::SEND_CHUNK,
+                       .payload = SendChunkPayload{
+                           .filename = payload.filename,
+                           .chunk_size = chunk_data.size(),
+                           .chunk_no = 0,
+                           .is_last_chunk = true,
+                       }};
+
+    messenger.send_json_message(msg);
+
     messenger.send_file_data(fileio, payload.offset, payload.chunk_size);
 }
 

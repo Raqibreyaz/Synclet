@@ -18,6 +18,11 @@ void Messenger::send_file_data(FileIO &fileio, const size_t offset, const size_t
     // client.shutdownWrite();
 }
 
+void Messenger::send_file_data(const std::string &data) const
+{
+    client.sendAll(data);
+}
+
 void Messenger::send_json_message(const Message &msg) const
 {
     json j;

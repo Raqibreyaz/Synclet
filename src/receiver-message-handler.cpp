@@ -22,7 +22,7 @@ void ReceiverMessageHandler::process_delete_file(const FileCreateRemovePayload &
     const auto &filepath = working_dir + "/" + payload.filename;
 
     // before removing check if file exists
-    if (!fs::exists(filepath) && !fs::remove(filepath))
+    if (!fs::exists(filepath) || !fs::remove(filepath))
         std::cerr << "failed to delete file: " << payload.filename << std::endl;
 }
 
@@ -34,7 +34,7 @@ void ReceiverMessageHandler::process_delete_file(const FilesRemovedPayload &payl
         const auto &filepath = working_dir + "/" + filename;
 
         // before removing check if file exists
-        if (!fs::exists(filepath) && !fs::remove(filepath))
+        if (!fs::exists(filepath) || !fs::remove(filepath))
             std::cerr << "failed to delete file: " << filename << std::endl;
     }
 }
@@ -57,7 +57,7 @@ void ReceiverMessageHandler::process_modified_chunk(const ModifiedChunkPayload &
 
     while (true)
     {
-        ChunkMetadata &&chunk_md{
+        ChunkMetadata chunk_md{
             .chunk_type = payload.chunk_type,
             .offset = payload.offset,
             .chunk_size = payload.chunk_size,
@@ -65,8 +65,7 @@ void ReceiverMessageHandler::process_modified_chunk(const ModifiedChunkPayload &
             .is_last_chunk = payload.is_last_chunk};
 
         // now take the chunk data if it is not removed
-        const std::string &data = payload.chunk_type != ChunkType::REMOVE ? messenger.receive_max_given_bytes(payload.chunk_size)
-                                                                          : "";
+        const std::string &data = payload.chunk_type != ChunkType::REMOVE ? messenger.receive_max_given_bytes(payload.chunk_size) : "";
 
         // save the whole chunk to corresponding file
         chunk_handler.save_chunk(chunk_md, data);
@@ -121,6 +120,7 @@ void ReceiverMessageHandler::process_fetch_files(const std::vector<std::string> 
 // fetch modified chunks from peer and save in your file
 void ReceiverMessageHandler::process_fetch_modified_chunks(const std::vector<FileModification> &modified_files)
 {
+    // fetches that amount of chunk and saves to corresponding chunk file
     const auto save_as_chunk_file = [&](
                                         ChunkHandler &chunk_handler,
                                         const ChunkType chunk_type,
@@ -136,7 +136,12 @@ void ReceiverMessageHandler::process_fetch_modified_chunks(const std::vector<Fil
             .old_chunk_size = old_chunk_size,
             .is_last_chunk = is_last_chunk};
 
-        const std::string &chunk_data = messenger.receive_max_given_bytes(chunk_size);
+        const size_t single_chunk_size = chunk_type == ChunkType::MODIFY ? old_chunk_size : chunk_size;
+
+        std::string &&chunk_data = "";
+
+        if (chunk_type != ChunkType::REMOVE)
+            chunk_data = messenger.receive_max_given_bytes(single_chunk_size);
 
         chunk_handler.save_chunk(chunk_md, chunk_data);
     };
