@@ -24,3 +24,22 @@ std::time_t to_unix_timestamp(const std::filesystem::file_time_type &mtime)
     using namespace std::chrono;
     return system_clock::to_time_t(time_point_cast<system_clock::duration>(mtime - std::filesystem::file_time_type::clock::now() + system_clock::now()));
 }
+
+void print_progress_bar(const std::string &message, double progress, size_t bar_width)
+{
+    size_t filled = static_cast<size_t>(std::round(progress * bar_width));
+    size_t empty = bar_width - filled;
+
+    std::stringstream ss;
+    for (size_t i = 0; i < filled; i++)
+        ss << "\033[35m█\033[0m";
+    for (size_t i = 0; i < empty; i++)
+        ss << "░";
+
+    std::clog << "\r"
+              << message
+              << " ["
+              << ss.str()
+              << "] " << std::fixed << std::setprecision(2)
+              << (progress * 100) << "% completed" << std::flush;
+}

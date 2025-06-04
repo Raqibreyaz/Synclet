@@ -44,10 +44,8 @@ std::pair<ChunkMetadata, std::string> ChunkHandler::read_chunk_file(uint64_t off
     // read the metadata
     chunk_file.read(reinterpret_cast<char *>(&chunk_md), sizeof(chunk_md));
 
-    // now resize the chunk_data var for getting whole chunk data
-    chunk_data.resize(chunk_md.chunk_type == ChunkType::MODIFY
-                          ? chunk_md.old_chunk_size
-                          : chunk_md.chunk_size);
+    // now resize the chunk_data var for getting whole chunk data, always will be the chunk_size given as old_chunk_size is to move the cursor
+    chunk_data.resize(chunk_md.chunk_size);
 
     // read the data
     if (chunk_md.chunk_type != ChunkType::REMOVE)

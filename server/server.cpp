@@ -63,7 +63,8 @@ int main()
             {
                 auto payload = std::get_if<FileCreateRemovePayload>(&(msg.payload));
                 if (payload)
-                    receiver_message_handler.process_create_file(*payload);
+                    receiver_message_handler.process_create_file(*payload,snaps);
+                  
                 else
                     std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
                 break;
@@ -73,7 +74,8 @@ int main()
             case MessageType::FILE_REMOVE:
             {
                 if (auto payload = std::get_if<FileCreateRemovePayload>(&(msg.payload)))
-                    receiver_message_handler.process_delete_file(*payload);
+                    receiver_message_handler.process_delete_file(*payload,snaps);
+                   
                 else
                     std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
                 break;
@@ -83,7 +85,8 @@ int main()
             case MessageType::FILES_CREATE:
             {
                 if (auto payload = std::get_if<FilesCreatedPayload>(&(msg.payload)))
-                    receiver_message_handler.process_create_file(*payload);
+                    receiver_message_handler.process_create_file(*payload,snaps);
+
                 else
                     std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
 
@@ -94,7 +97,8 @@ int main()
             case MessageType::FILES_REMOVE:
             {
                 if (auto payload = std::get_if<FilesRemovedPayload>(&(msg.payload)))
-                    receiver_message_handler.process_delete_file(*payload);
+                    receiver_message_handler.process_delete_file(*payload,snaps);
+        
                 else
                     std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
                 break;
@@ -104,7 +108,8 @@ int main()
             case MessageType::FILE_RENAME:
             {
                 if (auto payload = std::get_if<FileRenamePayload>(&(msg.payload)))
-                    receiver_message_handler.process_file_rename(*payload);
+                    receiver_message_handler.process_file_rename(*payload,snaps);
+
                 else
                     std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
                 break;
@@ -114,7 +119,7 @@ int main()
             case MessageType::MODIFIED_CHUNK:
             {
                 if (auto payload = std::get_if<ModifiedChunkPayload>(&(msg.payload)))
-                    receiver_message_handler.process_modified_chunk(*payload);
+                    receiver_message_handler.process_modified_chunk(*payload,snaps);
                 else
                     std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
                 break;
@@ -124,7 +129,7 @@ int main()
             case MessageType::SEND_CHUNK:
             {
                 if (auto payload = std::get_if<SendChunkPayload>(&(msg.payload)))
-                    receiver_message_handler.process_file_chunk(*payload);
+                    receiver_message_handler.process_file_chunk(*payload,snaps);
                 else
                     std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
                 break;

@@ -119,8 +119,10 @@ void SenderMessageHandler::handle_create_file(const std::vector<FileSnapshot> &f
     messenger.send_json_message(msg);
 
     // now sync all the files
-    for (const auto &file_snap : files)
-        handle_file_sync(file_snap);
+    for (size_t i = 0; i < files.size(); i++)
+    {
+        handle_file_sync(files[i]);
+    }
 }
 
 // inform peer about removed files
@@ -141,7 +143,9 @@ void SenderMessageHandler::handle_delete_file(const std::vector<std::string> &fi
 void SenderMessageHandler::handle_modify_file(const std::vector<FileModification> &modified_files) const
 {
     for (size_t i = 0; i < modified_files.size(); i++)
+    {
         handle_file_modification_sync(modified_files[i]);
+    }
 }
 
 // sync full file
@@ -175,7 +179,10 @@ void SenderMessageHandler::handle_file_sync(const FileSnapshot &file_snap) const
 
         // send chunk data
         messenger.send_file_data(fileio, chunks[i].second.offset, chunks[i].second.chunk_size);
+
+        print_progress_bar(std::format("sending {}...", file_snap.filename), static_cast<double>(i + 1) / chunks.size());
     }
+    std::clog << "\n\n";
 }
 
 // sync modified part of file
@@ -187,18 +194,22 @@ void SenderMessageHandler::handle_file_modification_sync(const FileModification 
 
     FileIO fileio(filepath);
 
-    for (auto &modified_chunk : file_modification.modified_chunks)
+    for (size_t i = 0; i < file_modification.modified_chunks.size(); i++)
     {
+        const auto &modified_chunk = file_modification.modified_chunks[i];
+
         msg.type = MessageType::MODIFIED_CHUNK;
         msg.payload = modified_chunk;
-        auto chunk_size = modified_chunk.chunk_type == ChunkType::MODIFY ? modified_chunk.old_chunk_size : modified_chunk.chunk_size;
 
         messenger.send_json_message(msg);
 
         // no need to send data in remove chunk case
         if (modified_chunk.chunk_type != ChunkType::REMOVE)
-            messenger.send_file_data(fileio, modified_chunk.offset, chunk_size);
+            messenger.send_file_data(fileio, modified_chunk.offset, modified_chunk.chunk_size);
+
+        print_progress_bar(std::format("sending {} changes...", modified_chunk.filename), static_cast<double>(i + 1) / file_modification.modified_chunks.size());
     }
+    std::clog << "\n\n";
 }
 
 // send the snapshot version to peer
@@ -260,6 +271,8 @@ void SenderMessageHandler::handle_request_download_files(const RequestDownloadFi
     // we have filenames only
     // we want chunk_size, chunk_no, is_last_chunk
     // and these will be present in the snap
-    for (auto &filename : payload.files)
-        handle_file_sync(curr_snap[filename]);
+    for (size_t i = 0; i < payload.files.size(); i++)
+    {
+        handle_file_sync(curr_snap[payload.files[i]]);
+    }
 }

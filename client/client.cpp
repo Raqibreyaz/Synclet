@@ -28,135 +28,136 @@ void signal_handler_wrap(int sig)
 
 int main()
 {
-    // configuring snap manager and watcher over the working dir
-    SnapshotManager snap_manager(DATA_DIR, PEER_SNAP_FILE);
-    Watcher watcher(DATA_DIR);
-
-    // create connection to server
-    TcpConnection client(SERVER_IP, std::to_string(PORT));
-
-    // configuring messenger to send/receive messages
-    Messenger messenger(client);
-
-    // configuring sending message handler to sync changes
-    SenderMessageHandler sender_message_handler(messenger, DATA_DIR);
-
-    // configuring receiving message handler to request & receive message
-    ReceiverMessageHandler receiver_message_handler(DATA_DIR, messenger);
-
-    // get current snap and peer's snap
-    auto &&[curr_snap_version, curr_snap] = snap_manager.scan_directory();
-    auto &&[peer_snap_version, peer_snap] = snap_manager.load_snapshot();
-
-    const bool was_peer_snap_present = !peer_snap.empty();
-    const bool was_peer_snap_version_same = was_peer_snap_present && receiver_message_handler.process_request_snap_version() == peer_snap_version;
-
-    // if no snap present or new snap available then fetch snap
-    if (!was_peer_snap_present || !was_peer_snap_version_same)
+    try
     {
-        const auto &peer_snap_list = receiver_message_handler.process_request_peer_snap();
+        // configuring snap manager and watcher over the working dir
+        SnapshotManager snap_manager(DATA_DIR, PEER_SNAP_FILE);
+        Watcher watcher(DATA_DIR);
 
-        for (auto &file_snap : peer_snap_list)
-            peer_snap[file_snap.filename] = file_snap;
-    }
+        // create connection to server
+        TcpConnection client(SERVER_IP, std::to_string(PORT));
 
-    // compare both snapshots and find changes
-    DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, peer_snap);
+        // configuring messenger to send/receive messages
+        Messenger messenger(client);
 
-    if (dir_changes.created_files.empty() && dir_changes.modified_files.empty() && dir_changes.removed_files.empty())
-        std::clog << "no initial changes found" << std::endl;
+        // configuring sending message handler to sync changes
+        SenderMessageHandler sender_message_handler(messenger, DATA_DIR);
 
-    // when files are created then sync them to peer
-    if (!dir_changes.created_files.empty())
-        sender_message_handler.handle_create_file(dir_changes.created_files);
+        // configuring receiving message handler to request & receive message
+        ReceiverMessageHandler receiver_message_handler(DATA_DIR, messenger);
 
-    // when files are not present
-    if (!dir_changes.removed_files.empty())
-    {
-        // fetch all the deleted files from peer if it's snap wasn't present or new snap available
+        // get current snap and peer's snap
+        auto [curr_snap_version, curr_snap] = snap_manager.scan_directory();
+        auto [peer_snap_version, peer_snap] = snap_manager.load_snapshot();
+
+        const bool was_peer_snap_present = !peer_snap.empty();
+        std::string fetched_peer_snap_version = receiver_message_handler.process_request_snap_version();
+        const bool was_peer_snap_version_same = was_peer_snap_present &&
+                                                fetched_peer_snap_version == peer_snap_version;
+
+        // if no snap present or new snap available then fetch snap + update peer_snap and it's snap version
         if (!was_peer_snap_present || !was_peer_snap_version_same)
         {
-            receiver_message_handler.process_fetch_files(dir_changes.removed_files);
+            receiver_message_handler.process_request_peer_snap(peer_snap);
+            peer_snap_version = fetched_peer_snap_version;
         }
 
-        // when peer snap was up to date then ask server to delete the files
-        else
+        // compare both snapshots and find changes
+        DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, peer_snap);
+
+        if (dir_changes.created_files.empty() &&
+            dir_changes.modified_files.empty() &&
+            dir_changes.removed_files.empty())
+            std::clog << "no initial changes found" << std::endl;
+
+        // when files are created then sync them to peer
+        if (!dir_changes.created_files.empty())
         {
-            sender_message_handler.handle_delete_file(dir_changes.removed_files);
+
+            std::clog << "syncing new files to peer..." << std::endl;
+            sender_message_handler.handle_create_file(dir_changes.created_files);
         }
-    }
 
-    // when files are modified
-    if (!dir_changes.modified_files.empty())
-    {
-        std::vector<FileModification> to_fetch;
-        std::vector<FileModification> to_change;
-
-        for (const auto &modified_file : dir_changes.modified_files)
+        // when files are not present
+        if (!dir_changes.removed_files.empty())
         {
-            // more time_t -> more recent
-            // if the current file is more older then fetch the modified chunks from peer
-            if (curr_snap[modified_file.filename].mtime < peer_snap[modified_file.filename].mtime)
-                to_fetch.push_back(modified_file);
+            // fetch all the deleted files from peer if it's snap wasn't present or new snap available
+            // + update the curr_snap
+            if (!was_peer_snap_present || !was_peer_snap_version_same)
+            {
+                std::clog << "downloading new files from peer..." << std::endl;
+                receiver_message_handler.process_fetch_files(dir_changes.removed_files, curr_snap);
+            }
 
-            // if current file is newer then sync changes to peer
+            // when curr snap was up to date then ask server to delete the files
             else
-                to_change.push_back(modified_file);
+            {
+                std::clog << "requesting peer to delete files" << std::endl;
+                sender_message_handler.handle_delete_file(dir_changes.removed_files);
+            }
         }
 
-        // request peer to update these files
-        if (!to_change.empty())
-            sender_message_handler.handle_modify_file(to_change);
+        // when files are modified
+        if (!dir_changes.modified_files.empty())
+        {
+            std::vector<FileModification> to_fetch;
+            std::vector<FileModification> to_change;
 
-        // request peer to send these updated chunks and save them
-        if (!to_fetch.empty())
-            receiver_message_handler.process_fetch_modified_chunks(to_fetch);
-    }
+            for (const auto &modified_file : dir_changes.modified_files)
+            {
+                // more time_t -> more recent
+                // if the current file is more older then fetch the modified chunks from peer
+                if (curr_snap[modified_file.filename].mtime < peer_snap[modified_file.filename].mtime)
+                    to_fetch.push_back(modified_file);
 
-    // now after syncing all changes save the current snap as server's snap
-    if (!dir_changes.created_files.empty() || !dir_changes.modified_files.empty() || !dir_changes.removed_files.empty())
-    {
-        auto &&[sn_vers, snaps] = snap_manager.scan_directory();
-        curr_snap = peer_snap = snaps;
-        curr_snap_version = peer_snap_version = sn_vers;
+                // if current file is newer then sync changes to peer
+                else
+                    to_change.push_back(modified_file);
+            }
 
-        snap_manager.save_snapshot(curr_snap);
-    }
+            // request peer to update these files
+            if (!to_change.empty())
+            {
+                std::clog << "syncing file changes to peer" << std::endl;
+                sender_message_handler.handle_modify_file(to_change);
+            }
 
-    const auto &peer_snap_list = receiver_message_handler.process_request_peer_snap();
+            // request peer to send these updated chunks and save them + update the curr_snap
+            if (!to_fetch.empty())
+            {
+                std::clog << "fetching modified files from peer" << std::endl;
+                receiver_message_handler.process_fetch_modified_chunks(to_fetch, curr_snap);
+            }
+        }
 
-    for (auto &file_snap : peer_snap_list)
-        peer_snap[file_snap.filename] = file_snap;
+        // now after syncing all changes save the current snap as peer's snap
+        if (!dir_changes.created_files.empty() || !dir_changes.modified_files.empty() || !dir_changes.removed_files.empty())
+        {
+            std::clog << "saving peer snap as cache" << std::endl;
+            snap_manager.save_snapshot(curr_snap);
+        }
 
-    dir_changes = snap_manager.compare_snapshots(curr_snap, peer_snap);
-
-    if (dir_changes.created_files.empty() &&
-        dir_changes.modified_files.empty() &&
-        dir_changes.removed_files.empty())
-    {
-        std::clog << "successfully synced initial changes to server" << std::endl;
+        signal_handler = [&](int _)
+        {
+            client.closeConnection();
+            snap_manager.save_snapshot(curr_snap);
+        };
         exit(EXIT_SUCCESS);
+        signal(SIGINT, signal_handler_wrap);
+
+        // continuously watch for changes to sync
+        std::clog << "waiting for file changes..." << std::endl;
+        while (true)
+        {
+            const auto &events = watcher.poll_events();
+
+            for (const auto &event : events)
+                sender_message_handler.handle_event(event, curr_snap);
+        }
     }
-    else
+    catch (const std::exception &e)
     {
-        throw std::runtime_error("changes not properly synced!!");
-    }
-
-    signal_handler = [&client](int _)
-    {
-        client.closeConnection();
-        exit(EXIT_SUCCESS);
-    };
-    signal(SIGINT, signal_handler_wrap);
-
-    // continuously watch for changes to sync
-    std::clog << "waiting for file changes..." << std::endl;
-    while (true)
-    {
-        const auto &events = watcher.poll_events();
-
-        for (const auto &event : events)
-            sender_message_handler.handle_event(event, curr_snap);
+        std::cerr << e.what() << '\n';
     }
 
     return 0;
