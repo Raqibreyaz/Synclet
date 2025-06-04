@@ -32,12 +32,8 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
     if (!file)
         throw std::runtime_error(std::format("{} {}", std::string("failed to open file"), file_path));
 
-    size_t last_slash = file_path.find_last_of('/');
-    if (last_slash == std::string::npos)
-        last_slash = -1;
-
     // create a snapshot of the file
-    FileSnapshot snapshot(file_path.substr(last_slash + 1), file_size, last_write_time, {});
+    FileSnapshot snapshot(extract_filename_from_path(file_path), file_size, last_write_time, {});
 
     // min window size: 32
     // max window size: 128
@@ -67,40 +63,55 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
         window.push_back(c);
     };
 
+    const size_t buffer_size = 1024 * 100;
+    std::vector<char> buffer(buffer_size);
+
     // process a character each time
-    char c = '\0';
     int chunk_no = 0;
-    while (file.get(c))
+
+    while (file)
     {
-        chunk.push_back(c);
+        file.read(buffer.data(), buffer.size());
+        std::streamsize bytes_read = file.gcount();
 
-        // when the window is small then complete it
-        if (window.size() >= static_cast<size_t>(w_size))
+        if (bytes_read == 0)
+            break;
+
+        for (size_t i = 0; i < static_cast<size_t>(bytes_read); i++)
         {
-            // take out the first char from window and hash
-            char out_char = window.front();
-            window.pop_front();
-            long long removed = 1LL * out_char * highest_power % modulo;
-            hash = (1LL * hash - removed + modulo) % modulo;
-        }
+            char c = buffer[i];
 
-        // add the char to hash and window
-        roll_hash(c);
+            chunk.push_back(c);
 
-        // when a chunk boundary found then process it
-        if (window.size() >= static_cast<size_t>(w_size) && hash % n == 0)
-        {
+            // when the window hit mark then remove oldest char
+            if (window.size() >= static_cast<size_t>(w_size))
+            {
+                // take out the first char from window and hash
+                char out_char = window.front();
+                window.pop_front();
+                long long removed = 1LL * out_char * highest_power % modulo;
+                hash = (1LL * hash - removed + modulo) % modulo;
+            }
 
-            auto &&chunk_object = ChunkInfo(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
+            // add the char to hash and window
+            roll_hash(c);
 
-            snapshot.chunks[chunk_object.hash] = std::move(chunk_object);
+            // when a chunk boundary found then process it
+            if (window.size() >= static_cast<size_t>(w_size) && hash % n == 0)
+            {
+                auto &&chunk_object = ChunkInfo(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
 
-            // move to next chunk
-            chunk_start += chunk.size();
-            chunk.clear();
-            window.clear();
-            hash = 0;
-            chunk_no++;
+                snapshot.chunks[chunk_object.hash] = std::move(chunk_object);
+
+                // move to next chunk
+                chunk_start += chunk.size();
+                chunk_no++;
+
+                // clear this chunk data + window + hash
+                hash = 0;
+                chunk.clear();
+                window.clear();
+            }
         }
     };
 

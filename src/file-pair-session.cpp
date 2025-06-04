@@ -41,7 +41,6 @@ void FilePairSession::reset_if_filepath_changes_append_required(const std::strin
     ensure_files_open();
 }
 
-// TODO: optimise in case of filling large gap
 // Fills gap in temp_file if present from the offset
 void FilePairSession::fill_gap_till_offset(const size_t offset)
 {
@@ -49,14 +48,24 @@ void FilePairSession::fill_gap_till_offset(const size_t offset)
     if (offset <= cursor || !temp_file)
         return;
 
-    // data copied to be filled
-    std::string to_copy = original_file->read_file_from_offset(cursor, offset);
+    size_t chunk_size = offset - cursor;
+
+    for (size_t read_so_far = 0; read_so_far < chunk_size;)
+    {
+        const std::string &to_copy = original_file->read_file_from_offset(
+            cursor + read_so_far,
+            std::min(MAX_READ_SIZE, chunk_size - read_so_far));
+
+        if (to_copy.empty())
+            break;
+
+        temp_file->append_chunk(to_copy);
+
+        read_so_far += to_copy.size();
+    }
 
     // as we have moved BYTES forward after copying BYTES data
     cursor = offset;
-
-    // now fill the data to temp_file
-    temp_file->append_chunk(to_copy);
 }
 
 // append chunk data to original file
@@ -88,7 +97,6 @@ void FilePairSession::skip_removed_chunk(const size_t offset, const size_t chunk
     cursor = offset + chunk_size;
 }
 
-// TODO: optimise in case of filling large remaining data
 // fill rest of the data from original file to temp_file + rename temp_file to original
 void FilePairSession::finalize_and_replace()
 {
