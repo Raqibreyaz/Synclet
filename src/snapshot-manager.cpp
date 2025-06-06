@@ -4,6 +4,9 @@ SnapshotManager::SnapshotManager(const std::string &data_dir_path, const std::st
 
 std::string SnapshotManager::create_hash(const std::vector<char> &data)
 {
+    if(data.empty())
+    return "";
+
     std::deque<char> dq;
 
     unsigned char hash[SHA256_DIGEST_LENGTH];
@@ -19,12 +22,18 @@ std::string SnapshotManager::create_hash(const std::vector<char> &data)
     return oss.str();
 }
 
-// TODO: optimise instead of getting single char from file get more
 // creates snapshot of the file using content dependent chunking
 FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
 {
     const uint64_t file_size = fs::file_size(file_path);
+
     const time_t last_write_time = to_unix_timestamp(fs::last_write_time(file_path));
+
+    // create a snapshot of the file
+    FileSnapshot snapshot(extract_filename_from_path(file_path), file_size, last_write_time, {});
+
+    if (file_size == 0)
+        return snapshot;
 
     // open the file
     std::ifstream file(file_path, std::ios::binary);
@@ -32,11 +41,9 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
     if (!file)
         throw std::runtime_error(std::format("{} {}", std::string("failed to open file"), file_path));
 
-    // create a snapshot of the file
-    FileSnapshot snapshot(extract_filename_from_path(file_path), file_size, last_write_time, {});
-
     // min window size: 32
     // max window size: 128
+    // dividing file_size with almost 1MB
     const int w_size = std::clamp<int>(file_size / 1000000, 32, 128);
 
     // min n: 2048
@@ -44,6 +51,13 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
 
     const int modulo = 1e9 + 7;
     const int base = 256;
+
+    /*
+        window_size = w
+        base = 256
+        hash = C0*base^w-1 + C1*base^w-2 + ... + (Cw-1*base^0 or Cw-1)
+        chunk_boundary -> hash % n == 0
+    */
 
     // for computing hash
     long long hash = 0;
@@ -56,6 +70,7 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
 
     std::deque<char> window;
     std::vector<char> chunk;
+    chunk.reserve(w_size * 2);
 
     const auto roll_hash = [&](char c)
     {

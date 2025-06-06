@@ -16,18 +16,18 @@ ReceiverMessageHandler::ReceiverMessageHandler(const std::string &working_dir, M
 // creates and appends stream data to file then create and add snapshot
 void ReceiverMessageHandler::process_create_file(const FileCreateRemovePayload &payload, DirSnapshot &snaps)
 {
-    process_get_files(std::vector<std::string>({payload.filename}));
-
-    snaps[payload.filename] = SnapshotManager::createSnapshot(working_dir + "/" + payload.filename);
+    FileIO fileio(std::format("{}/{}", working_dir, payload.filename), std::ios::out);
+    snaps[payload.filename] = SnapshotManager::createSnapshot(fileio.get_filepath());
 }
 
 // creates a list of files and appends stream data to them then create and add snapshots
 void ReceiverMessageHandler::process_create_file(const FilesCreatedPayload &payload, DirSnapshot &snaps)
 {
-    process_get_files(payload.files);
-
     for (auto &filename : payload.files)
-        snaps[filename] = SnapshotManager::createSnapshot(working_dir + "/" + filename);
+    {
+        FileIO fileio(std::format("{}/{}", working_dir, filename), std::ios::out);
+        snaps[filename] = SnapshotManager::createSnapshot(fileio.get_filepath());
+    }
 }
 
 // deletes a given file and removes from snaps
@@ -54,8 +54,7 @@ void ReceiverMessageHandler::process_delete_file(const FilesRemovedPayload &payl
             std::cerr << "failed to delete file: " << filename << std::endl;
 
         // remove the file from snaps too!
-        else
-            snaps.erase(filename);
+        snaps.erase(filename);
     }
 }
 
@@ -121,6 +120,47 @@ void ReceiverMessageHandler::process_modified_chunk(const ModifiedChunkPayload &
     snaps[payload.filename] = SnapshotManager::createSnapshot(filepath);
 }
 
+void ReceiverMessageHandler::process_file(const SendFilePayload &payload, DirSnapshot &snaps)
+{
+    const std::string filepath = std::format("{}/{}", working_dir, payload.filename);
+    FilePairSession file_session(filepath, true);
+    file_session.ensure_files_open();
+
+    // take all the chunks and append them to the original file
+    for (int i = 0; i < payload.no_of_chunks; ++i)
+    {
+        const Message &msg = messenger.receive_json_message();
+
+        if (msg.type != MessageType::SEND_CHUNK)
+            std::runtime_error("invalid message type received!");
+
+        // now fetch all the chunks and append to file
+        if (auto chunk_payload = std::get_if<SendChunkPayload>(&(msg.payload)))
+        {
+            if (chunk_payload->filename != payload.filename)
+                throw std::runtime_error(std::format("invalid chunk received from another file: {} instead of {}", chunk_payload->filename, payload.filename));
+
+            const std::string &chunk_data = messenger.receive_max_given_bytes(chunk_payload->chunk_size);
+
+            file_session.append_data(chunk_data);
+
+            if (chunk_payload->is_last_chunk)
+            {
+                file_session.close_session();
+                break;
+            }
+        }
+        else
+            throw std::runtime_error("invalid payload type received!");
+
+        print_progress_bar(std::format("fetching {}...", payload.filename), static_cast<double>(i + 1) / payload.no_of_chunks);
+    }
+    std::clog << "\n\n";
+
+    // update the file snap
+    snaps[payload.filename] = SnapshotManager::createSnapshot(filepath);
+}
+
 // just opens the file appends the data and updates the snap of the file
 void ReceiverMessageHandler::process_file_chunk(const SendChunkPayload &payload, DirSnapshot &snaps)
 {
@@ -137,21 +177,16 @@ void ReceiverMessageHandler::process_file_chunk(const SendChunkPayload &payload,
 // request peer to send the list of files and save on receiving + creates snaps of that files
 void ReceiverMessageHandler::process_fetch_files(const std::vector<std::string> &files, DirSnapshot &snaps)
 {
+    // send the filenames to get their data
     RequestDownloadFilesPayload req_payload;
     req_payload.files = files;
-
     const Message &msg{
         .type = MessageType::REQ_DOWNLOAD_FILES,
         .payload = std::move(req_payload)};
-
     messenger.send_json_message(msg);
 
     // now get all the files and save them
-    process_get_files(files);
-
-    // now add the snaps of the provided files
-    for (auto &filename : files)
-        snaps[filename] = SnapshotManager::createSnapshot(working_dir + "/" + filename);
+    process_get_files(files, snaps);
 }
 
 // fetch modified chunks from peer and save in your file
@@ -304,44 +339,18 @@ void ReceiverMessageHandler::process_request_peer_snap(DirSnapshot &peer_snaps)
         throw std::runtime_error("invalid data received");
 }
 
-void ReceiverMessageHandler::process_get_files(const std::vector<std::string> &files)
+void ReceiverMessageHandler::process_get_files(const std::vector<std::string> &files, DirSnapshot &snaps)
 {
     for (size_t i = 0; i < files.size(); i++)
     {
-        const std::string &filename = files[i];
+        const Message &msg = messenger.receive_json_message();
 
-        // file will be created on opening it
-        FilePairSession file_session(working_dir + "/" + filename, true);
-        file_session.ensure_files_open();
+        if (msg.type != MessageType::SEND_FILE)
+            throw std::runtime_error("invalid message type received!");
 
-        while (true)
-        {
-            const Message &msg = messenger.receive_json_message();
-
-            if (msg.type != MessageType::SEND_CHUNK)
-                std::runtime_error("invalid message type received!");
-
-            // now fetch all the chunks and append to file
-            if (auto chunk_payload = std::get_if<SendChunkPayload>(&(msg.payload)))
-            {
-
-                if (chunk_payload->filename != filename)
-                    throw std::runtime_error(std::format("invalid chunk received from another file: {} instead of {}", chunk_payload->filename, filename));
-
-                const std::string &chunk_data = messenger.receive_max_given_bytes(chunk_payload->chunk_size);
-
-                file_session.append_data(chunk_data);
-
-                if (chunk_payload->is_last_chunk)
-                {
-                    file_session.close_session();
-                    break;
-                }
-            }
-            else
-                throw std::runtime_error("invalid payload type received!");
-        }
-        print_progress_bar("fetching files...", static_cast<double>(i + 1) / files.size());
+        if (auto payload = std::get_if<SendFilePayload>(&(msg.payload)))
+            process_file(*payload, snaps);
+        else
+            throw std::runtime_error("invalid payload received!");
     }
-    std::clog << "\n\n";
 }

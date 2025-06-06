@@ -22,6 +22,7 @@ enum class MessageType
     REQ_SNAP,           // client asks server to send snap
     DATA_SNAP,          // server replies with the snap
     REQ_DOWNLOAD_FILES, // client needs to or download files
+    SEND_FILE,
     REQ_CHUNK,
     SEND_CHUNK, // for sending entire files by chunk
 };
@@ -125,6 +126,15 @@ struct DataSnapshotPayload
 struct RequestDownloadFilesPayload : Files
 {
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(RequestDownloadFilesPayload, files);
+};
+
+struct SendFilePayload
+{
+    std::string filename;
+    size_t file_size;
+    int no_of_chunks;
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(SendFilePayload, filename, file_size, no_of_chunks);
 };
 
 struct RequestChunkPayload

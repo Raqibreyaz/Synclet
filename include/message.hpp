@@ -13,6 +13,7 @@ using PayloadVariant = std::variant<
     SnapVersionPayload,
     DataSnapshotPayload,
     RequestDownloadFilesPayload,
+    SendFilePayload,
     RequestChunkPayload,
     SendChunkPayload>;
 

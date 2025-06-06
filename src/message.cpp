@@ -26,6 +26,8 @@ std::string message_type_to_string(MessageType type)
         return "SNAP_VERSION";
     case MessageType::REQ_SNAP:
         return "REQ_SNAP";
+    case MessageType::SEND_FILE:
+        return "SEND_FILE";
     case MessageType::REQ_CHUNK:
         return "REQ_CHUNK";
     case MessageType::SEND_CHUNK:
@@ -61,6 +63,8 @@ MessageType message_type_from_string(const std::string &type)
         return MessageType::SNAP_VERSION;
     else if (type == "REQ_SNAP")
         return MessageType::REQ_SNAP;
+    else if (type == "SEND_FILE")
+        return MessageType::SEND_FILE;
     else if (type == "REQ_CHUNK")
         return MessageType::REQ_CHUNK;
     else if (type == "SEND_CHUNK")
@@ -140,6 +144,10 @@ void from_json(const json &j, Message &m)
 
     case MessageType::FILES_REMOVE:
         m.payload = payload_json.get<FilesRemovedPayload>();
+        break;
+
+    case MessageType::SEND_FILE:
+        m.payload = payload_json.get<SendFilePayload>();
         break;
 
     case MessageType::REQ_CHUNK:

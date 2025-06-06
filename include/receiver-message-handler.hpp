@@ -16,6 +16,7 @@ public:
     void process_delete_file(const FileCreateRemovePayload &payload,DirSnapshot& snaps);
     void process_delete_file(const FilesRemovedPayload &payload,DirSnapshot& snaps);
     void process_file_rename(const FileRenamePayload &payload,DirSnapshot& snaps);
+    void process_file(const SendFilePayload& payload,DirSnapshot& snaps);
     void process_file_chunk(const SendChunkPayload &payload,DirSnapshot& snaps);
     void process_fetch_files(const std::vector<std::string> &files,DirSnapshot& snaps);
     void process_fetch_modified_chunks(const std::vector<FileModification> &modified_files,DirSnapshot& snaps);
@@ -25,5 +26,5 @@ public:
 private:
     std::string working_dir;
     Messenger &messenger;
-    void process_get_files(const std::vector<std::string>& files);
+    void process_get_files(const std::vector<std::string>& files,DirSnapshot& snaps);
 };

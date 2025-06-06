@@ -25,12 +25,51 @@ void SenderMessageHandler::handle_create_file(const FileEvent &event, DirSnapsho
 {
     const std::string &filename = extract_filename_from_path(event.filepath);
 
-    // create a snap of the new file
-    curr_snap[filename] = SnapshotManager::createSnapshot(event.filepath);
+    // create an empty snap of the new file
+    curr_snap[filename] = FileSnapshot(filename, 0,
+                                       to_unix_timestamp(fs::last_write_time(event.filepath)),
+                                       {});
 
-    handle_create_file(std::vector<FileSnapshot>({curr_snap[filename]}));
+    // send filename so that peer can create it
+    Message msg{
+        .type = MessageType::FILE_CREATE,
+        .payload = FileCreateRemovePayload{.filename = filename},
+    };
+    messenger.send_json_message(msg);
 }
 
+// inform peer for creation of files and sync created files
+void SenderMessageHandler::handle_create_file(const std::vector<FileSnapshot> &files) const
+{
+    Message msg;
+
+    FilesCreatedPayload payload;
+    payload.files = std::vector<std::string>();
+    payload.files.reserve(files.size());
+
+    std::transform(files.begin(), files.end(), std::back_inserter(payload.files),
+                   [](const auto &file_snap)
+                   {
+                       return file_snap.filename;
+                   });
+
+    msg.type = MessageType::FILES_CREATE;
+    msg.payload = std::move(payload);
+
+    // send filenames so that peer will create that files
+    messenger.send_json_message(msg);
+
+    // now sync all the files
+    for (size_t i = 0; i < files.size(); i++)
+    {
+        if (files[i].chunks.empty())
+            continue;
+
+        handle_file_sync(files[i]);
+    }
+}
+
+// inform peer about a single removed file
 void SenderMessageHandler::handle_delete_file(const FileEvent &event, DirSnapshot &curr_snap) const
 {
     const std::string &filename = extract_filename_from_path(event.filepath);
@@ -38,7 +77,26 @@ void SenderMessageHandler::handle_delete_file(const FileEvent &event, DirSnapsho
     // remove the entry from map
     curr_snap.erase(filename);
 
-    handle_delete_file(std::vector<std::string>({filename}));
+    Message msg{
+        .type = MessageType::FILE_REMOVE,
+        .payload = FileCreateRemovePayload{.filename = filename},
+    };
+
+    messenger.send_json_message(msg);
+}
+
+// inform peer about removed files
+void SenderMessageHandler::handle_delete_file(const std::vector<std::string> &files) const
+{
+    Message msg;
+
+    FilesCreatedPayload payload;
+    payload.files = files;
+
+    msg.type = MessageType::FILES_REMOVE;
+    msg.payload = std::move(payload);
+
+    messenger.send_json_message(msg);
 }
 
 // inform peer for renaming of file
@@ -71,17 +129,17 @@ void SenderMessageHandler::handle_modify_file(const FileEvent &event, DirSnapsho
     const std::string &filepath = event.filepath;
     const std::string &filename = extract_filename_from_path(filepath);
 
-    FileSnapshot &&curr_file_snap = SnapshotManager::createSnapshot(filepath);
     FileSnapshot &prev_file_snap = snap.at(filename);
-
-    // storing the current snapshot of the file
-    snap[filename] = curr_file_snap;
+    FileSnapshot &&curr_file_snap = SnapshotManager::createSnapshot(filepath);
 
     // will return changes in sorted order means every array(added,modified,removed all will be sorted)
     const FileModification &file_modification = SnapshotManager::get_file_modification(curr_file_snap, prev_file_snap);
 
     // now we have to send changes
     handle_file_modification_sync(file_modification);
+
+    // storing the current snapshot of the file
+    snap[filename] = curr_file_snap;
 }
 
 // handle file changes
@@ -95,48 +153,6 @@ void SenderMessageHandler::handle_changes(const DirChanges &dir_changes) const
 
     if (!dir_changes.modified_files.empty())
         handle_modify_file(dir_changes.modified_files);
-}
-
-// inform peer for creation of files and sync created files
-void SenderMessageHandler::handle_create_file(const std::vector<FileSnapshot> &files) const
-{
-    Message msg;
-
-    FilesCreatedPayload payload;
-    payload.files = std::vector<std::string>();
-    payload.files.reserve(files.size());
-
-    std::transform(files.begin(), files.end(), std::back_inserter(payload.files),
-                   [](const auto &file_snap)
-                   {
-                       return file_snap.filename;
-                   });
-
-    msg.type = MessageType::FILES_CREATE;
-    msg.payload = std::move(payload);
-
-    // send filenames so that peer will create that files
-    messenger.send_json_message(msg);
-
-    // now sync all the files
-    for (size_t i = 0; i < files.size(); i++)
-    {
-        handle_file_sync(files[i]);
-    }
-}
-
-// inform peer about removed files
-void SenderMessageHandler::handle_delete_file(const std::vector<std::string> &files) const
-{
-    Message msg;
-
-    FilesCreatedPayload payload;
-    payload.files = files;
-
-    msg.type = MessageType::FILES_REMOVE;
-    msg.payload = std::move(payload);
-
-    messenger.send_json_message(msg);
 }
 
 // inform and sync delta of file
@@ -156,6 +172,17 @@ void SenderMessageHandler::handle_file_sync(const FileSnapshot &file_snap) const
     const std::string &filepath = working_dir + "/" + file_snap.filename;
 
     FileIO fileio(filepath);
+
+    // send the file metadata
+    msg.type = MessageType::SEND_FILE;
+    msg.payload = SendFilePayload{
+        .filename = file_snap.filename,
+        .file_size = file_snap.file_size,
+        .no_of_chunks = static_cast<int>(file_snap.chunks.size()),
+    };
+    messenger.send_json_message(msg);
+
+    // now sending chunks
 
     // cant sort hashmap so storing pairs in vector to sort
     std::vector<std::pair<std::string, ChunkInfo>> chunks(file_snap.chunks.begin(), file_snap.chunks.end());
