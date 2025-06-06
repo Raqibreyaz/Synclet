@@ -54,8 +54,6 @@ modification: ✅
 addition: ✅
 . take new chunk's offset + size to extract from file and append the data of new chunk
 deletion: ✅
-. take end index of the old chunk to truncate file
-. suppose 5 chunks removed so take the end index of the first removed chunk 
 - addition/deletion only one will exist at a time ✅
 
 - initially any peer should know what to send/receive before watching for events as there can be changes when program was closed. ✅
@@ -64,4 +62,6 @@ deletion: ✅
 - how server should handle multiple modify chunks of same file ✅
 . by keeping a file pointer which opens a file and not closes till any other file's chunk come ✅
 . but issue is when to detect that this is the last modify chunk received ✅ (added is_last_chunk prop)
+- for each change update the map also at both client and server ✅
 
+- handle REQ_CHUNK, REQ_DOWNLOAD_FILES, REQ_SNAP, REQ_SNAP_VERSION in sender-message-handler ✅

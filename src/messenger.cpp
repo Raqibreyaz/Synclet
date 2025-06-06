@@ -18,13 +18,18 @@ void Messenger::send_file_data(FileIO &fileio, const size_t offset, const size_t
     // client.shutdownWrite();
 }
 
+void Messenger::send_file_data(const std::string &data) const
+{
+    client.sendAll(data);
+}
+
 void Messenger::send_json_message(const Message &msg) const
 {
     json j;
 
     to_json(j, msg);
 
-    const std::string message = j.dump();
+    const std::string &message = j.dump();
 
     // sending the len of json message
     std::string json_len_string = convert_to_binary_string(message.size());
@@ -49,7 +54,7 @@ Message Messenger::receive_json_message() const
     json_len = ntohl(json_len);
 
     // receive exact message bytes
-    std::string message = client.receiveSome(json_len);
+    const std::string &message = client.receiveSome(json_len);
 
     if (!message.empty())
     {
@@ -65,4 +70,14 @@ Message Messenger::receive_json_message() const
     }
 
     return msg;
+}
+
+std::string Messenger::receive_full_data()
+{
+    return client.receiveAll();
+}
+
+std::string Messenger::receive_max_given_bytes(size_t max_bytes) const
+{
+    return client.receiveSome(max_bytes);
 }

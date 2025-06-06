@@ -73,6 +73,7 @@
     "executor": "cpp",
     "internet": "cpp",
     "io_context": "cpp",
-    "netfwd": "cpp"
+    "netfwd": "cpp",
+    "set": "cpp"
   }
 }

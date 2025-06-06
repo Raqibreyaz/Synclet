@@ -4,6 +4,9 @@ SnapshotManager::SnapshotManager(const std::string &data_dir_path, const std::st
 
 std::string SnapshotManager::create_hash(const std::vector<char> &data)
 {
+    if(data.empty())
+    return "";
+
     std::deque<char> dq;
 
     unsigned char hash[SHA256_DIGEST_LENGTH];
@@ -19,12 +22,18 @@ std::string SnapshotManager::create_hash(const std::vector<char> &data)
     return oss.str();
 }
 
-// TODO: optimise instead of getting single char from file get more
 // creates snapshot of the file using content dependent chunking
 FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
 {
     const uint64_t file_size = fs::file_size(file_path);
+
     const time_t last_write_time = to_unix_timestamp(fs::last_write_time(file_path));
+
+    // create a snapshot of the file
+    FileSnapshot snapshot(extract_filename_from_path(file_path), file_size, last_write_time, {});
+
+    if (file_size == 0)
+        return snapshot;
 
     // open the file
     std::ifstream file(file_path, std::ios::binary);
@@ -32,15 +41,9 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
     if (!file)
         throw std::runtime_error(std::format("{} {}", std::string("failed to open file"), file_path));
 
-    size_t last_slash = file_path.find_last_of('/');
-    if (last_slash == std::string::npos)
-        last_slash = -1;
-
-    // create a snapshot of the file
-    FileSnapshot snapshot(file_path.substr(last_slash + 1), file_size, last_write_time, {});
-
     // min window size: 32
     // max window size: 128
+    // dividing file_size with almost 1MB
     const int w_size = std::clamp<int>(file_size / 1000000, 32, 128);
 
     // min n: 2048
@@ -48,6 +51,13 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
 
     const int modulo = 1e9 + 7;
     const int base = 256;
+
+    /*
+        window_size = w
+        base = 256
+        hash = C0*base^w-1 + C1*base^w-2 + ... + (Cw-1*base^0 or Cw-1)
+        chunk_boundary -> hash % n == 0
+    */
 
     // for computing hash
     long long hash = 0;
@@ -60,6 +70,7 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
 
     std::deque<char> window;
     std::vector<char> chunk;
+    chunk.reserve(w_size * 2);
 
     const auto roll_hash = [&](char c)
     {
@@ -67,40 +78,55 @@ FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
         window.push_back(c);
     };
 
+    const size_t buffer_size = 1024 * 100;
+    std::vector<char> buffer(buffer_size);
+
     // process a character each time
-    char c = '\0';
     int chunk_no = 0;
-    while (file.get(c))
+
+    while (file)
     {
-        chunk.push_back(c);
+        file.read(buffer.data(), buffer.size());
+        std::streamsize bytes_read = file.gcount();
 
-        // when the window is small then complete it
-        if (window.size() >= static_cast<size_t>(w_size))
+        if (bytes_read == 0)
+            break;
+
+        for (size_t i = 0; i < static_cast<size_t>(bytes_read); i++)
         {
-            // take out the first char from window and hash
-            char out_char = window.front();
-            window.pop_front();
-            long long removed = 1LL * out_char * highest_power % modulo;
-            hash = (1LL * hash - removed + modulo) % modulo;
-        }
+            char c = buffer[i];
 
-        // add the char to hash and window
-        roll_hash(c);
+            chunk.push_back(c);
 
-        // when a chunk boundary found then process it
-        if (window.size() >= static_cast<size_t>(w_size) && hash % n == 0)
-        {
+            // when the window hit mark then remove oldest char
+            if (window.size() >= static_cast<size_t>(w_size))
+            {
+                // take out the first char from window and hash
+                char out_char = window.front();
+                window.pop_front();
+                long long removed = 1LL * out_char * highest_power % modulo;
+                hash = (1LL * hash - removed + modulo) % modulo;
+            }
 
-            auto &&chunk_object = ChunkInfo(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
+            // add the char to hash and window
+            roll_hash(c);
 
-            snapshot.chunks[chunk_object.hash] = std::move(chunk_object);
+            // when a chunk boundary found then process it
+            if (window.size() >= static_cast<size_t>(w_size) && hash % n == 0)
+            {
+                auto &&chunk_object = ChunkInfo(chunk_start, chunk.size(), create_hash(chunk), chunk_no);
 
-            // move to next chunk
-            chunk_start += chunk.size();
-            chunk.clear();
-            window.clear();
-            hash = 0;
-            chunk_no++;
+                snapshot.chunks[chunk_object.hash] = std::move(chunk_object);
+
+                // move to next chunk
+                chunk_start += chunk.size();
+                chunk_no++;
+
+                // clear this chunk data + window + hash
+                hash = 0;
+                chunk.clear();
+                window.clear();
+            }
         }
     };
 
@@ -138,21 +164,27 @@ std::pair<std::string, DirSnapshot> SnapshotManager::scan_directory()
     std::sort(sorted_snaps.begin(), sorted_snaps.end(), [](const auto &file_a, const auto &file_b)
               { return file_a.first < file_b.first; });
 
+    //  adding data for snap version
     for (const auto &[filename, file_snap] : sorted_snaps)
     {
-        ss << filename << "|" << file_snap.file_size << "|" << file_snap.mtime;
+        ss << filename << "|" << file_snap.file_size;
 
         for (const auto &[_, chunk] : file_snap.chunks)
         {
             ss << "|" << chunk.offset << ":" << chunk.chunk_size << ":" << chunk.hash;
         }
+        ss << "||";
     }
 
-    std::pair<std::string, DirSnapshot> p;
-    p.first = create_hash(std::vector<char>(ss.str().begin(), ss.str().end()));
-    p.second = DirSnapshot(sorted_snaps.begin(), sorted_snaps.end());
+    std::string snap_str = ss.str();
 
-    return p;
+    // trimming last redundant ||
+    if (snap_str.size() >= 2 && snap_str.substr(snap_str.size() - 2) == "||")
+        snap_str.erase(snap_str.size() - 2);
+
+    return {
+        create_hash(std::vector<char>(snap_str.begin(), snap_str.end())),
+        DirSnapshot(sorted_snaps.begin(), sorted_snaps.end())};
 }
 
 // Compare two snapshots and return changed/added/deleted files
@@ -178,9 +210,7 @@ DirChanges SnapshotManager::compare_snapshots(
         {
             FileModification &&file_modification = get_file_modification(snap, prev_snap->second);
 
-            if (!(file_modification.added.empty()) ||
-                !(file_modification.modified.empty()) ||
-                !(file_modification.removed.empty()))
+            if (!(file_modification.modified_chunks.empty()))
                 changes.modified_files.push_back(std::move(file_modification));
         }
     }
@@ -200,9 +230,7 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
 {
     FileModification changes{
         .filename = file_curr_snap.filename,
-        .added = {},
-        .modified = {},
-        .removed = {}};
+        .modified_chunks = {}};
 
     std::unordered_map<uint64_t, ChunkInfo> prev_offset_map;
     std::unordered_map<uint64_t, ChunkInfo> curr_offset_map;
@@ -230,13 +258,13 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
             (offset_chunk_it == curr_offset_map.end() ||
              file_prev_snap.chunks.contains(offset_chunk_it->second.hash)))
         {
-            AddRemoveChunkPayload removed_chunk(
-                file_prev_snap.filename,
-                chunk.offset,
-                chunk.chunk_size,
-                false);
+            ModifiedChunkPayload removed_chunk(ChunkType::REMOVE,
+                                               file_prev_snap.filename,
+                                               chunk.offset,
+                                               chunk.chunk_size,
+                                               0, false);
 
-            changes.removed.push_back(std::move(removed_chunk));
+            changes.modified_chunks.push_back(std::move(removed_chunk));
         }
     }
 
@@ -255,12 +283,13 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
             (offset_chunk_it == prev_offset_map.end() ||
              file_curr_snap.chunks.contains(offset_chunk_it->second.hash)))
         {
-            AddRemoveChunkPayload added_chunk(file_curr_snap.filename,
-                                              chunk.offset,
-                                              chunk.chunk_size,
-                                              false);
+            ModifiedChunkPayload added_chunk(ChunkType::ADD,
+                                             file_curr_snap.filename,
+                                             chunk.offset,
+                                             chunk.chunk_size,
+                                             0, false);
 
-            changes.added.push_back(std::move(added_chunk));
+            changes.modified_chunks.push_back(std::move(added_chunk));
         }
     }
 
@@ -275,47 +304,29 @@ FileModification SnapshotManager::get_file_modification(const FileSnapshot &file
             !(file_prev_snap.chunks.contains(chunk.hash)) &&
             !(file_curr_snap.chunks.contains(prev_offset_it->second.hash)))
         {
-            ModifiedChunkPayload modified_chunk(file_curr_snap.filename, offset, chunk.chunk_size, prev_offset_it->second.chunk_size, false);
+            ModifiedChunkPayload modified_chunk(ChunkType::MODIFY,
+                                                file_curr_snap.filename,
+                                                offset,
+                                                chunk.chunk_size,
+                                                prev_offset_it->second.chunk_size,
+                                                false);
 
-            changes.modified.push_back(std::move(modified_chunk));
+            changes.modified_chunks.push_back(std::move(modified_chunk));
         }
     }
 
+    // for marking last chunk we need to sort according to offset
     const auto offset_sort = [](const auto &a, const auto &b) -> bool
     {
         return a.offset < b.offset;
     };
-    // see before sorting
-    std::sort(changes.added.begin(),
-              changes.added.end(),
+    std::sort(changes.modified_chunks.begin(),
+              changes.modified_chunks.end(),
               offset_sort);
 
-    std::sort(changes.modified.begin(),
-              changes.modified.end(),
-              offset_sort);
-
-    std::sort(changes.removed.begin(),
-              changes.removed.end(),
-              offset_sort);
-    // see after sorting
-    const auto get_last_offset = [](const auto &vec) -> uint64_t
-    {
-        return vec.empty() ? 0 : vec.back().offset;
-    };
-
-    size_t max_offset = std::max({get_last_offset(changes.added),
-                                  get_last_offset(changes.removed),
-                                  get_last_offset(changes.modified)});
-
-    // mark last chunk which has max_offset of the file
-    const auto mark_last = [&](auto &vec)
-    {
-        if (!(vec.empty()) && vec.back().offset == max_offset)
-            vec.back().is_last_chunk = true;
-    };
-    mark_last(changes.added);
-    mark_last(changes.modified);
-    mark_last(changes.removed);
+    //   now mark last chunk
+    if (!changes.modified_chunks.empty())
+        changes.modified_chunks.back().is_last_chunk = true;
 
     return changes;
 }
@@ -341,7 +352,7 @@ void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
         file_json["mtime"] = snap.mtime;
         file_json["chunks"] = json::array();
 
-        ss << filename << "|" << snap.file_size << "|" << snap.mtime;
+        ss << filename << "|" << snap.file_size;
 
         for (const auto &[_, chunk] : snap.chunks)
         {
@@ -354,13 +365,19 @@ void SnapshotManager::save_snapshot(const DirSnapshot &snaps)
             ss << "|" << chunk.offset << ":" << chunk.chunk_size << ":" << chunk.hash;
         }
 
-        ss << "\n";
+        ss << "||";
 
         files.push_back(file_json);
     }
 
+    std::string snap_str = ss.str();
+
+    // remove last redundant ||
+    if (snap_str.size() >= 2 && snap_str.substr(snap_str.size() - 2) == "||")
+        snap_str.erase(snap_str.size() - 2);
+
     j["version"] = create_hash(
-        std::vector<char>(ss.str().begin(), ss.str().end()));
+        std::vector<char>(snap_str.begin(), snap_str.end()));
     j["files"] = std::move(files);
 
     std::ofstream file(snap_file_path, std::ios::out);

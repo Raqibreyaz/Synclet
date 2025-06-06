@@ -11,9 +11,12 @@ CLIENT_SRCS := client/client.cpp \
 	src/file-io.cpp \
 	src/watcher.cpp \
 	src/file-event.cpp \
-	src/file-change-handler.cpp \
 	src/message-types.cpp \
-	src/snapshot-manager.cpp 
+	src/snapshot-manager.cpp \
+	src/file-pair-session.cpp \
+	src/sender-message-handler.cpp \
+	src/receiver-message-handler.cpp \
+	src/chunk-handler.cpp
 	
 
 SERVER_SRCS := server/server.cpp \
@@ -27,7 +30,9 @@ SERVER_SRCS := server/server.cpp \
 	src/message-types.cpp \
 	src/snapshot-manager.cpp \
 	src/file-pair-session.cpp \
-	src/server-message-handler.cpp
+	src/sender-message-handler.cpp \
+	src/receiver-message-handler.cpp \
+	src/chunk-handler.cpp
 
 CLIENT_OBJS = $(CLIENT_SRCS:.cpp=.o)
 SERVER_OBJS = $(SERVER_SRCS:.cpp=.o)

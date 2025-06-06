@@ -1,3 +1,38 @@
+"HOW SNAPSHOT OF A FILE WILL BE CREATED":
+
+"HOW A CHUNK WILL BE CREATED":
+- using a rolling hash (like rabin-karp)
+. w = window_size
+. base = 256(say)
+. n = chunk_frequency
+. Ci = ith chunk in the window
+. hash = hash = C0*base^w-1 + C1*base^w-2 + ... + (Cw-1*base^0 or Cw-1)
+
+- sliding the window by hash - C0*base^w-1 (for removing the first char) and hash * base + C(for adding new char C) 
+- so hash % n == 0 whereever found for a window then that's a chunk boundary
+
+  's' 'i'   'j'
+[a b c d e f g h]
+. 's' defines the start of the chunk 
+. 'i' defines the start of the window
+. 'j' defines the end of the window
+. on every chunk boundary found for the window then creatte a SHA256 hash from 's' to 'j' that's it
+. reset window, hash
+. move 's' = 'j+1'
+. now start window from 's'
+
+- Repeat process each time till EOF and whole snapshot will be created
+
+"WHY NOT DIVIDED FILE IN FIXED SIZE CHUNKS:"
+- fixed size chunking fails to correctly identifies the changed chunk as the chunks afterwards also shifts so using CDC
+- chunks are created using (hash % N == 0), if this condition met for a window 
+- 2 important vars, N and window size
+- chunks can be of ~N size but not ==N 
+- used hybrid approach of weak + strong hash where weak hash finds boundary and strong hash for saving actual hash of chunk (used combination of rolling hash + SHA-256)
+
+
+
+"HOW CHANGE WILL BE TESTED":
 chunk:{               
     offset,
     chunk_size,
@@ -13,6 +48,8 @@ what change is proper sign of modification-
 . chunk_size(but will not consider for check, hash is reliable)
 
 
+
+"PROTOCOL DESIGN":
 TYPE: MODIFIED_CHUNK
 PAYLOAD:{
      filename;
@@ -72,6 +109,30 @@ PAYLOAD:{
 }
 raw_data: no
 
+TYPE: SEND_FILE
+PAYLOAD:{
+    filename,
+    file_size,
+    no_of_chunks,
+}
+raw_data: no
+
+TYPE: REQ_CHUNK
+PAYLOAD: {
+    filename,
+    offset,
+    chunk_size
+}
+raw_data: no
+
+TYPE: SEND_CHUNK
+PAYLOAD:{
+    filename,
+    chunk_size,
+    chunk_no
+}
+raw_data: yes
+
 TYPE: REQ_SNAP
 PAYLOAD: {}
 raw_data: no
@@ -83,49 +144,46 @@ PAYLOAD:{
             filename,
             file_size,
             mtime,
-            chunks:{
-                "hash":{
+            chunks:[
+                    {
                     offset,
                     chunk_size,
                     hash,
                     chunk_no
-                }
-            }
+                    }
+                   ]
         }
     ];
 }
 raw_data: no
 
 
-TYPE: SEND_CHUNK
-PAYLOAD:{
-    filename,
-    chunk_size,
-    chunk_no
-}
-raw_data: yes
 
-
-Saved_Snapshot:
+"SNAPSHOT WILL BE SAVED LIKE THIS":
 {
-    version: created by filename|file_size|modified_time|chunk_offset:chunk_size:chunk_hash,
+    version: created by filename|file_size|chunk_offset:chunk_size:chunk_hash,
     files:[
         {
             filename,
             size,
             mtime,
-            chunks:[
+            chunks:{
                 {
+                "hash":{
                     chunk_no,
                     hash,
                     offset,
                     chunk_size
+                       }
                 }
-            ]
+            }
         }
     ]
 }
 
+
+
+"HOW TO COPY FROM ORIGINAL FILE TO TEMP_FILE":
 chunks:[
     {offset: 10,size:10}
     {offset: 30,size:40}
@@ -137,6 +195,44 @@ chunks:[
 . copy 70-99 from original then write chunk[2]
 . copy all the data from offset 150
 
+
+
+"INITIAL_SYNC":
+
+- client request's server to send it's snapshot version for checking if there are changes at server side
+
+- if there was no saved snap of peer then client request server to send its snapshot REQ_SNAP as client initially will not have a snap-file.json for server's snap ✅
+
+- peer-snap-file.json and it's same version is a sign that previously our client has synced to server ✅
+
+- on getting snap, client will compare its snap and server's  ✅
+
+- if files are created at client side then will always be synced to server.
+. file's chunks will be sent in a sorted manner so that peer will only have to append that data
+. since files 
+
+- if files are not available at client but available at server,there can be 2 causes either all files are deleted at client or client is not up to date with server's data
+. so if client was not up to date with server's data then fetch all the required files from server, but how? --> with the help of server's snap version , if it is changed
+. if client is up to date then request server to delete that files too!
+
+- if files are modified then again there can be 2 cases either client has made changes in the files or client was not updated with server's changes
+. if client has made changes then sync the changes to server
+. if client was not up to date with server's changes then update client's files with server's
+. but how? --> using modified time of files so comparing files when server's file has latest changes by  file's modified time then fetch that delta chunks from server and if client has latest changes then sync them to server
+. except new_file's chunks modified_chunks will not come in order so we will save each chunk as a separate file in a dir named as "[filename]_dir" by chunk-[offset].bin
+. every chunk-file will be binary and have data like this: 
+non-padded object {
+    chunk_type,     // to distinguish whether data is replaceable or added
+    offset,         // from where this chunk started in original/new based on chunk_type
+    chunk_size,     // always equal to chunk_data_size
+    old_chunk_size, // used to move the cursor in original file or leave it in non-modify chunks
+    is_last_chunk   // telling if the chunk is last in the file
+    }
+    + chunk_data and all these will be saved as binary
+
+
+
+"HOW NOISY CHANGES WILL BE CLEANED";
 - for cleaning changes of each file 
 - hashmap<filename,{
     last_event,
@@ -149,71 +245,3 @@ chunks:[
 3. timer_active: If an event comes and a timer is already running, we reset it instead of starting a new one.
 4. scheduled_action: Helps to avoid redundant processing, Can be used to cancel scheduled actions if DELETE happens before MODIFY action fires.
 
-INITIAL_SYNC
-- client request server to send its snapshot REQ_SNAP as client initially will not have a snap-file.json for server's snap ✅
-- snap-file.json is a sign that previously our client has synced to server ✅
-- if snap-file.json already present then client will ask server to send the snap_version to identify if the snap is up to date ✅
-- on getting snap, client will compare its snap and server's  ✅
-- if files are created at client side then will always be synced to server 
-- if files are not available at client but available at server,there can be 2 causes either all files are deleted at client or client is not up to date with server's data
-. so if client was not up to date with server's data then fetch all the required files from server
-. if client is up to date then request server to delete that files too!
-- if files are modified then again there can be 2 cases either client has made changes in the files or client was not updated with server's changes
-. if client has made changes then sync the changes to server
-. if client was not up to date with server's changes then update client's files with server's
-- handle_created_files_sync
-. just send the files to server
-- handle_delete_files_sync
-. just tell server to delete these files
-- handle_deleted_files_download_from_server
-. ask server to send these files
-- handle_modified_files_sync
-. send the modified_chunks to server
-- handle_modified_files_sync_from_server
-. ask server to send these modified_chunks
-. send offset+old_chunk_size to get server's chunk
-
-
-FileChangeHandler
-{
-public:
-    FileChangeHandler(const Messenger &messenger, const std::string &working_dir);
-    handle_event(const FileEvent &event, DirSnapshot &curr_snap) const;
-    andle_changes(const DirChanges &dir_changes) const;
-
-private:
-    const Messenger &messenger;
-    const std::string working_dir;
-    void handle_create_file(const FileSnapshot &file_snap) const;
-    handle_delete_file(const FileEvent &event) const;
-    handle_create_file(const std::vector<FileSnapshot> &files) const;
-    handle_delete_file(const std::vector<std::string> &files) const;
-    handle_rename_file(const FileEvent &event) const;
-    handle_modify_file(const FileEvent &event, DirSnapshot &snap) const;
-    handle_modify_file(const std::vector<FileModification> &modified_files) const;
-    handle_file_sync(const FileSnapshot &file_snap) const;
-    handle_file_modification_sync(const FileModification &file_modification) const;
-};
-
-ServerMessageHandler
-{
-public:
-    ServerMessageHandler(const std::string &working_dir, TcpConnection &client);
-    process_modified_chunk(const ModifiedChunkPayload &payload);
-    process_add_remove_chunk(const AddRemoveChunkPayload &payload, const bool is_removed = false);
-    process_create_file(const FileCreateRemovePayload &payload);
-    process_create_file(const FilesCreatedPayload &payload);
-    process_delete_file(const FileCreateRemovePayload &payload);
-    process_delete_file(const FilesRemovedPayload &payload);
-    process_file_rename(const FileRenamePayload &payload);
-    process_file_chunk(const SendChunkPayload &payload);
-
-private:
-    std::string working_dir;
-    TcpConnection &client;
-    std::unique_ptr<FilePairSession> active_session;
-    void get_or_create_session(const std::string &filename,const bool append_to_original = false);
-};
-
-- our sender and receiver classes are bounded with client-server but sometimes we are required to use them in any client/server
-- like in this case

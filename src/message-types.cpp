@@ -21,31 +21,17 @@ FileSnapshot::FileSnapshot(const std::string &filename,
       mtime(mtime),
       chunks(chunks) {}
 
-AddRemoveChunkPayload::AddRemoveChunkPayload()
-    : filename(""),
-      offset(SIZE_MAX),
-      chunk_size(SIZE_MAX),
-      is_last_chunk(false) {}
+ModifiedChunkPayload::ModifiedChunkPayload() {}
 
-AddRemoveChunkPayload::AddRemoveChunkPayload(const std::string &filename,
-                                             const size_t offset,
-                                             const size_t chunk_size,
-                                             const bool is_last_chunk)
-    : filename(filename),
-      offset(offset),
-      chunk_size(chunk_size),
-      is_last_chunk(is_last_chunk) {}
-
-ModifiedChunkPayload::ModifiedChunkPayload()
-    : old_chunk_size(SIZE_MAX) {}
-
-ModifiedChunkPayload::ModifiedChunkPayload(const std::string &filename,
+ModifiedChunkPayload::ModifiedChunkPayload(const ChunkType chunk_type,
+                                           const std::string &filename,
                                            const size_t offset,
                                            const size_t chunk_size,
                                            const size_t old_chunk_size,
                                            const bool is_last_chunk)
-    : AddRemoveChunkPayload(filename,
-                            offset,
-                            chunk_size,
-                            is_last_chunk),
-      old_chunk_size(old_chunk_size) {}
+    : chunk_type(chunk_type),
+      filename(filename),
+      offset(offset),
+      chunk_size(chunk_size),
+      old_chunk_size(old_chunk_size),
+      is_last_chunk(is_last_chunk) {}

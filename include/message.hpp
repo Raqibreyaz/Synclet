@@ -6,7 +6,6 @@
 using PayloadVariant = std::variant<
     std::monostate,
     ModifiedChunkPayload,
-    AddRemoveChunkPayload,
     FileCreateRemovePayload,
     FileRenamePayload,
     FilesCreatedPayload,
@@ -14,8 +13,9 @@ using PayloadVariant = std::variant<
     SnapVersionPayload,
     DataSnapshotPayload,
     RequestDownloadFilesPayload,
-    SendChunkPayload
-    >;
+    SendFilePayload,
+    RequestChunkPayload,
+    SendChunkPayload>;
 
 struct Message
 {
@@ -29,4 +29,4 @@ void from_json(const json &j, Message &msg);
 
 std::string message_type_to_string(MessageType type);
 
-MessageType message_type_from_string(const std::string& type);
+MessageType message_type_from_string(const std::string &type);
