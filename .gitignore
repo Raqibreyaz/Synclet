@@ -8,3 +8,4 @@ generateFiles
 data
 output
 learning_cmake*
+*.js

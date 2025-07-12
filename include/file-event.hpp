@@ -13,6 +13,7 @@ enum class EventType
     MODIFIED,
     DELETED,
     RENAMED,
+    MOVED,
     UNKNOWN
 };
 
@@ -21,22 +22,26 @@ class FileEvent
 public:
     std::filesystem::path filepath;
 
+    bool is_directory;
+
     // for handling rename logic
     std::optional<std::filesystem::path> old_filepath;
     std::optional<std::filesystem::path> new_filepath;
 
     EventType event_type;
-    uint32_t cookie;
     std::chrono::steady_clock::time_point timestamp;
 
     // constructor for CREATE, DELETE, MODIFY
-    FileEvent(const std::string &filepath, EventType event_type, uint32_t cookie);
+    FileEvent(const std::string &filepath,
+              const bool is_dir,
+              EventType event_type);
 
     // constructor for rename events
-    FileEvent(const std::string &old_filepath,
-              const std::string &new_filepath,
-              EventType event_type,
-              uint32_t cookie);
+    FileEvent(
+        const bool is_dir,
+        const std::string &old_filepath,
+        const std::string &new_filepath,
+        EventType event_type);
 };
 
 EventType getEventTypeFromMask(uint32_t mask);
