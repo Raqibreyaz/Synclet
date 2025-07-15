@@ -65,3 +65,22 @@ deletion: ✅
 - for each change update the map also at both client and server ✅
 
 - handle REQ_CHUNK, REQ_DOWNLOAD_FILES, REQ_SNAP, REQ_SNAP_VERSION in sender-message-handler ✅
+
+- what i have yet
+    . variabe sized content wise divide file
+    . can fetch snap version of peer
+    . can fetch snapshot of peer
+    . compare snapshots and find changes in it
+    . can fetch files from server
+    . can sync modified chunks of file to peer
+    . can fetch modified chunks from peer
+    . can sync realtime changes to peer
+
+- what should be added
+    . instead of filename send filepath without the main dir name addition ✅
+    . assigning watchers to over all sub directories ✅
+    . optimise as much possible for file modification case where a new temp file is created
+    . updating snaps when dir is moved, deleted ✅
+    . handling initial changes where dirs can be created/deleted
+    . fixing naming , like remove and delete both are used anywhere, maintaining consistency in naming
+    . should be fault tolerant so that if syncing interrupted then continues from that point next time , currently it works fine when no interrupt occurs it efficiently sync changes

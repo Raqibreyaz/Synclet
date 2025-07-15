@@ -14,11 +14,18 @@ enum class MessageType
     MODIFIED_CHUNK,
     FILE_CREATE,
     FILE_REMOVE,
-    FILE_RENAME,
+    FILE_MOVED,
     FILES_CREATE,
     FILES_REMOVE,
+    DIR_CREATE,
+    DIR_REMOVE,
+    DIR_MOVED,
+    DIRS_CREATE,
+    DIRS_REMOVE,
     REQ_SNAP_VERSION,
     SNAP_VERSION,
+    REQ_DIR_LIST,
+    DIR_LIST,
     REQ_SNAP,           // client asks server to send snap
     DATA_SNAP,          // server replies with the snap
     REQ_DOWNLOAD_FILES, // client needs to or download files
@@ -82,6 +89,12 @@ struct SnapVersionPayload
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(SnapVersionPayload, snap_version);
 };
 
+struct DirListPayload{
+    std::vector<std::string> dirs;
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(DirListPayload,dirs);
+};
+
 struct FilesCreatedPayload : Files
 {
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(FilesCreatedPayload, files);
@@ -92,12 +105,34 @@ struct FilesRemovedPayload : Files
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(FilesRemovedPayload, files);
 };
 
-struct FileRenamePayload
+struct FileMovedPayload
 {
     std::string old_filename;
     std::string new_filename;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE(FileRenamePayload, old_filename, new_filename);
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(FileMovedPayload, old_filename, new_filename);
+};
+
+struct DirCreateRemovePayload 
+{
+    std::string dir_path;
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(DirCreateRemovePayload, dir_path);
+};
+
+struct DirMovedPayload
+{
+    std::string old_dir_path;
+    std::string new_dir_path;
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(DirMovedPayload, old_dir_path, new_dir_path);
+};
+
+struct DirsCreatedRemovedPayload
+{
+    std::vector<std::string> dirs;
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(DirsCreatedRemovedPayload, dirs);
 };
 
 struct ModifiedChunkPayload

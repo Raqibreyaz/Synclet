@@ -3,7 +3,9 @@
 #include <cstring>
 #include <unordered_map>
 #include <vector>
+#include <unordered_set>
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -24,27 +26,35 @@ struct FileModification
     std::vector<ModifiedChunkPayload> modified_chunks;
 };
 
-struct DirChanges
+struct FileChanges
 {
     std::vector<std::string> removed_files;
     std::vector<FileModification> modified_files;
     std::vector<FileSnapshot> created_files;
 };
 
+struct DirChanges
+{
+    std::vector<std::string> removed_dirs;
+    std::vector<std::string> added_dirs;
+};
+
 class SnapshotManager
 {
 public:
-    SnapshotManager(const std::string &data_dir_path, const std::string &snap_file_path);
+    SnapshotManager(const std::string &data_dir, const std::string &snap_file);
 
-    static FileSnapshot createSnapshot(const std::string &file_path);
+    static FileSnapshot createSnapshot(const std::string &file_path, const std::string &dir_to_skip);
 
     // Scan a directory and build a snapshot of all files and their chunks
     std::pair<std::string, DirSnapshot> scan_directory();
 
     // Compare two snapshots and return changed/added/deleted chunks
-    DirChanges compare_snapshots(
+    FileChanges compare_snapshots(
         const DirSnapshot &currSnapshot,
         const DirSnapshot &prevSnapshot);
+
+    DirChanges compare_directories( std::vector<std::string> &prev_dirs);
 
     static FileModification get_file_modification(const FileSnapshot &file_curr_snap, const FileSnapshot &file_prev_snap);
 

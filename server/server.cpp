@@ -105,16 +105,71 @@ int main()
             }
 
             // rename the given file
-            case MessageType::FILE_RENAME:
+            case MessageType::FILE_MOVED:
             {
-                if (auto payload = std::get_if<FileRenamePayload>(&(msg.payload)))
-                    receiver_message_handler.process_file_rename(*payload, snaps);
+                if (auto payload = std::get_if<FileMovedPayload>(&(msg.payload)))
+                    receiver_message_handler.process_file_moved(*payload, snaps);
 
                 else
                     std::cerr << "invalid payload for: " << message_type_to_string(msg.type);
                 break;
             }
 
+            case MessageType::DIR_CREATE:
+            {
+                if (auto payload = std::get_if<DirCreateRemovePayload>(&(msg.payload)))
+                {
+                    receiver_message_handler.process_create_dir(*payload);
+                }
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type) << std::endl;
+                break;
+            }
+
+            case MessageType::DIR_REMOVE:
+            {
+                if (auto payload = std::get_if<DirCreateRemovePayload>(&(msg.payload)))
+                {
+                    receiver_message_handler.process_delete_dir(*payload, snaps);
+                }
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type) << std::endl;
+                break;
+            }
+
+            case MessageType::DIRS_CREATE:
+            {
+                if (auto payload = std::get_if<DirsCreatedRemovedPayload>(&(msg.payload)))
+                {
+                    receiver_message_handler.process_create_dir(*payload);
+                }
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type) << std::endl;
+                break;
+            }
+
+            case MessageType::DIRS_REMOVE:
+            {
+                if (auto payload = std::get_if<DirsCreatedRemovedPayload>(&(msg.payload)))
+                {
+                    receiver_message_handler.process_delete_dir(*payload, snaps);
+                }
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type) << std::endl;
+                break;
+            }
+
+            case MessageType::DIR_MOVED:
+            {
+                if (auto payload = std::get_if<DirMovedPayload>(&(msg.payload)))
+                {
+                    receiver_message_handler.process_dir_moved(*payload, snaps);
+                }
+                else
+                    std::cerr << "invalid payload for: " << message_type_to_string(msg.type) << std::endl;
+                break;
+            }
+           
             // save the modified chunk in corresponding file
             case MessageType::MODIFIED_CHUNK:
             {
@@ -158,6 +213,11 @@ int main()
                 break;
             }
 
+            case MessageType::REQ_DIR_LIST:
+            {
+                sender_message_handler.handle_request_dir_list();
+                break;
+            }
             // send the requested chunk to peer
             case MessageType::REQ_CHUNK:
             {

@@ -1,15 +1,43 @@
 #include "../include/utils.hpp"
 
-std::string extract_filename_from_path(const std::string &path)
+std::string sanitize_filename(const std::string &filename)
 {
-    if (path.empty())
-        return "";
+    const std::unordered_set<char> invalid_chars{
+        '<', '>', ':', '"', '/', '\\', '|', '?', '*'};
 
-    size_t last_slash = path.find_last_of('/');
-    if (last_slash == std::string::npos)
-        last_slash = -1;
+    std::string sanitized;
+    sanitized.reserve(filename.size());
 
-    return path.substr(last_slash + 1);
+    for (char ch : filename)
+    {
+        if (invalid_chars.count(ch) || ch <= 31) // control chars too
+            sanitized.push_back('-');
+        else
+            sanitized.push_back(ch);
+    }
+
+    return sanitized;
+}
+std::string extract_filename_from_path(const std::string &dir_to_skip, const std::string &path)
+{
+    size_t part_to_skip_pos = path.find(dir_to_skip);
+
+    // skipping the givem dir
+    if (part_to_skip_pos != std::string::npos)
+        part_to_skip_pos = part_to_skip_pos + dir_to_skip.size();
+    else
+        part_to_skip_pos = 0;
+
+    // skipping ./
+    if (path.starts_with("./") && part_to_skip_pos == 0)
+        part_to_skip_pos += 2;
+
+    // skipping leading slash
+    if (path[part_to_skip_pos] == '/')
+        part_to_skip_pos += 1;
+
+    // returning final substring
+    return path.substr(part_to_skip_pos);
 }
 
 std::string convert_to_binary_string(size_t n)

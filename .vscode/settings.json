@@ -74,6 +74,7 @@
     "internet": "cpp",
     "io_context": "cpp",
     "netfwd": "cpp",
-    "set": "cpp"
+    "set": "cpp",
+    "unordered_set": "cpp"
   }
 }

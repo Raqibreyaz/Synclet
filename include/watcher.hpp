@@ -11,6 +11,7 @@
 #include <sys/inotify.h>
 #include <sys/timerfd.h>
 #include "file-event.hpp"
+#include "utils.hpp"
 
 namespace fd = std::filesystem;
 
@@ -35,9 +36,20 @@ private:
     void apply_epoll_timer();
     void fill_events(std::vector<FileEvent> &file_events, struct inotify_event *event);
 
+    struct FileMovePair
+    {
+        std::string old_file_path;
+        bool is_directory;
+        std::chrono::steady_clock::time_point time_stamp;
+        FileMovePair(const std::string &old_file_path,
+                     const bool is_dir)
+            : old_file_path(old_file_path),
+              is_directory(is_dir),
+              time_stamp(std::chrono::steady_clock::now()) {}
+    };
+
     std::unordered_map<int, std::string> wd_to_dir;
 
-    std::unordered_map<uint32_t,
-                       std::pair<std::string, std::chrono::steady_clock::time_point>>
-        file_rename_tracker;
+    std::unordered_map<uint32_t, FileMovePair>
+        file_moved_tracker;
 };

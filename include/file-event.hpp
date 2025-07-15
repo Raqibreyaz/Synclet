@@ -12,7 +12,6 @@ enum class EventType
     CREATED,
     MODIFIED,
     DELETED,
-    RENAMED,
     MOVED,
     UNKNOWN
 };

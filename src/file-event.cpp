@@ -1,6 +1,13 @@
 #include "../include/file-event.hpp"
 
-FileEvent::FileEvent(const std::string &filepath, const bool is_dir, EventType event_type) : filepath(filepath), is_directory(is_dir), event_type(event_type), timestamp(std::chrono::steady_clock::now())
+FileEvent::FileEvent(
+    const std::string &filepath,
+    const bool is_dir,
+    EventType event_type)
+    : filepath(filepath),
+      is_directory(is_dir),
+      event_type(event_type),
+      timestamp(std::chrono::steady_clock::now())
 {
 }
 
@@ -26,9 +33,9 @@ EventType getEventTypeFromMask(uint32_t mask)
     if (mask & IN_CLOSE_WRITE || mask & IN_MODIFY)
         return EventType::MODIFIED;
     if (mask & IN_MOVED_FROM)
-        return EventType::RENAMED;
+        return EventType::MOVED;
     if (mask & IN_MOVED_TO)
-        return EventType::RENAMED;
+        return EventType::MOVED;
 
     return EventType::UNKNOWN;
 }

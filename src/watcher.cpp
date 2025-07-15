@@ -23,7 +23,7 @@ void Watcher::apply_watchers(const std::string &dir)
         throw std::runtime_error(std::format("failed to add watcher to {}", dir));
 
     // adding the wd to map with the dir
-    wd_to_dir[wd] = watch_dir;
+    wd_to_dir[wd] = dir;
 
     // applying watchers to every sub directory
     for (auto entry : fs::recursive_directory_iterator(dir))
@@ -43,7 +43,7 @@ void Watcher::apply_watchers(const std::string &dir)
 
 void Watcher::apply_epoll_timer()
 {
-    int epollfd = epoll_create1(0);
+    epollfd = epoll_create1(0);
     if (epollfd == -1)
     {
         std::string error = std::strerror(errno);
@@ -60,7 +60,7 @@ void Watcher::apply_epoll_timer()
         throw std::runtime_error(std::format("epoll_ctl: {}", error));
     }
 
-    int timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+    timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     struct itimerspec its;
     its.it_value.tv_sec = 0;
     its.it_value.tv_nsec = 100 * 1000000;
@@ -85,10 +85,7 @@ void Watcher::fill_events(std::vector<FileEvent> &file_events, struct inotify_ev
     // taking the parent dir where this file event occured
     std::string dir = wd_to_dir[event->wd];
 
-    size_t first_slash = dir.find_last_of('/');
-
-    // the sub directory matters
-    std::string sub_dir = first_slash == std::string::npos ? "" : dir.substr(first_slash + 1);
+    std::string filepath = extract_filename_from_path(watch_dir, dir + "/" + event->name);
 
     // check if it is a directory
     const bool is_dir = event->mask & IN_ISDIR ? true : false;
@@ -102,50 +99,95 @@ void Watcher::fill_events(std::vector<FileEvent> &file_events, struct inotify_ev
     //  when file/dir is created
     else if (event->mask & IN_CREATE)
     {
-        file_events.emplace_back(std::format("{}/{}", sub_dir, std::string(event->name)), is_dir, EventType::CREATED);
+        file_events.emplace_back(
+            filepath,
+            is_dir,
+            EventType::CREATED);
+
+        // if dir added then apply watcher
+        if (is_dir)
+            apply_watchers(watch_dir + "/" + filepath);
+
+        std::cout << "file create event: " << filepath << std::endl;
     }
 
     // when file/dir is deleted
     else if (event->mask & IN_DELETE)
     {
 
-        file_events.emplace_back(std::format("{}/{}", sub_dir,
-                                             std::string(event->name)),
-                                 is_dir, EventType::DELETED);
+        file_events.emplace_back(
+            filepath,
+            is_dir,
+            EventType::DELETED);
+
+        // dir deletion handled in in_ignore case
+
+        std::cout << "file delete event: " << filepath << std::endl;
     }
 
     // when file is modified
     else if (event->mask & IN_CLOSE_WRITE)
     {
-        file_events.emplace_back(std::format("{}/{}", sub_dir,
-                                             std::string(event->name)),
-                                 is_dir, EventType::MODIFIED);
+        file_events.emplace_back(filepath,
+                                 is_dir,
+                                 EventType::MODIFIED);
+        std::cout << "file modify event: " << filepath << std::endl;
     }
 
     // when file/dir is moved from here
     else if (event->mask & IN_MOVED_FROM)
     {
-        auto now = std::chrono::steady_clock::now();
-        file_rename_tracker[event->cookie] = {sub_dir, now};
+        file_moved_tracker.emplace(event->cookie, FileMovePair(filepath, is_dir));
     }
 
     // when file/dir is moved here
     else if (event->mask & IN_MOVED_TO)
     {
-        auto it = file_rename_tracker.find(event->cookie);
+        auto it = file_moved_tracker.find(event->cookie);
 
         // when there is no moved_from event happened then it is file/dir is created
-        if (it == file_rename_tracker.end())
+        if (it == file_moved_tracker.end())
         {
-            file_events.emplace_back(sub_dir + "/" + event->name, is_dir, EventType::CREATED);
+            file_events.emplace_back(
+                filepath,
+                is_dir,
+                EventType::CREATED);
+            std::cout << "file create event: " << filepath << std::endl;
+
+            // applying watcher to the new dir
+            if (is_dir)
+                apply_watchers(watch_dir + "/" + filepath);
+
             return;
         }
 
         // file/dir is renamed/moved
-        file_events.emplace_back(is_dir, sub_dir + '/' + it->second.first, sub_dir + '/' + event->name, EventType::MOVED);
+        file_events.emplace_back(
+            it->second.is_directory,
+            it->second.old_file_path,
+            filepath,
+            EventType::MOVED);
+
+        // when it is a directory then update wd-to-dir map
+        if (it->second.is_directory)
+        {
+            for (auto &p : wd_to_dir)
+            {
+                const std::string full_path = std::format("{}/{}", watch_dir, it->second.old_file_path);
+                const std::string new_full_path = std::format("{}/{}", watch_dir, filepath);
+
+                if (p.second == full_path)
+                {
+                    p.second = new_full_path;
+                    break;
+                }
+            }
+        }
+
+        std::cout << "file move event: " << it->second.old_file_path << " -> " << filepath << std::endl;
 
         // now remove the rename entry from map
-        file_rename_tracker.erase(it);
+        file_moved_tracker.erase(it);
     }
 }
 
@@ -195,10 +237,6 @@ std::vector<FileEvent> Watcher::poll_events()
                 // fullpath including parent folder and file/dir
                 std::string full_path = std::format("{}/{}", dir, file);
 
-                // if dir added then apply watcher
-                if (event->mask & IN_ISDIR && event->mask & IN_CREATE)
-                    apply_watchers(full_path);
-
                 // here we have to fill the event array
                 fill_events(file_events, event);
 
@@ -207,23 +245,43 @@ std::vector<FileEvent> Watcher::poll_events()
         }
 
         // when timer expired
-        else if (timerfd == fd && !file_rename_tracker.empty())
+        else if (timerfd == fd && !file_moved_tracker.empty())
         {
             uint64_t expirations;
             read(timerfd, &expirations, sizeof(expirations));
 
             auto now = std::chrono::steady_clock::now();
 
-            // here we have to push the delete events into event array
-            for (auto &[cookie, p] : file_rename_tracker)
+            for (auto it = file_moved_tracker.begin(); it != file_moved_tracker.end();)
             {
-                auto &[old_path, time_stamp] = p;
+
+                auto &move_pair = it->second;
 
                 // if >200ms passed for moved file then it is deleted
-                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - time_stamp).count() > 200)
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - move_pair.time_stamp).count() > 200)
                 {
-                    file_events.emplace_back(old_path, EventType::DELETED, 0);
+                    file_events.emplace_back(move_pair.old_file_path, move_pair.is_directory,
+                                             EventType::DELETED);
+
+                    // remove the entry from wd-to-dir
+                    if (move_pair.is_directory)
+                    {
+                        for (auto &p : wd_to_dir)
+                        {
+                            const std::string full_path = std::format("{}/{}", watch_dir, it->second.old_file_path);
+
+                            if (p.second == full_path)
+                            {
+                                wd_to_dir.erase(p.first);
+                                break;
+                            }
+                        }
+                    }
+
+                    it = file_moved_tracker.erase(it);
                 }
+                else
+                    it++;
             }
         }
     }
