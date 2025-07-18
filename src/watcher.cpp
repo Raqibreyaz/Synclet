@@ -67,12 +67,25 @@ void Watcher::apply_epoll_timer()
     its.it_interval.tv_sec = 0;
     its.it_interval.tv_nsec = 100 * 1000000;
     timerfd_settime(timerfd, 0, &its, nullptr);
+}
+
+void Watcher::register_timer()
+{
 
     struct epoll_event timer_event;
     timer_event.events = EPOLLIN;
     timer_event.data.fd = timerfd;
 
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, timerfd, &timer_event) == -1)
+    {
+        std::string error = std::strerror(errno);
+        throw std::runtime_error(std::format("epoll_ctl: {}", error));
+    }
+}
+
+void Watcher::unregister_timer()
+{
+    if (epoll_ctl(epollfd, EPOLL_CTL_DEL, timerfd, nullptr) == -1)
     {
         std::string error = std::strerror(errno);
         throw std::runtime_error(std::format("epoll_ctl: {}", error));
@@ -137,6 +150,13 @@ void Watcher::fill_events(std::vector<FileEvent> &file_events, struct inotify_ev
     // when file/dir is moved from here
     else if (event->mask & IN_MOVED_FROM)
     {
+        // register timer when first move event is being added
+        if (file_moved_tracker.empty())
+        {
+            register_timer();
+            std::clog << "timer added" << std::endl;
+        }
+
         file_moved_tracker.emplace(event->cookie, FileMovePair(filepath, is_dir));
     }
 
@@ -245,8 +265,16 @@ std::vector<FileEvent> Watcher::poll_events()
         }
 
         // when timer expired
-        else if (timerfd == fd && !file_moved_tracker.empty())
+        else if (timerfd == fd)
         {
+            // remove timer when there is no file move event present
+            if (file_moved_tracker.empty())
+            {
+                unregister_timer();
+                std::clog << "timer removed" << std::endl;
+                continue;
+            }
+
             uint64_t expirations;
             read(timerfd, &expirations, sizeof(expirations));
 

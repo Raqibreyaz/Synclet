@@ -1,0 +1,71 @@
+- issue: overhead of continously polling if a change is occured in any  
+         file in any directory and cpu cycles goes waste in polling.
+    fix: used linux's native inotify api, which efficiently tells the process that this particular file has changes, reduces manual work of finding changes and cpu cycles wastage by polling as process sleeps when no changes
+
+- issue: on every file modification syncing full file is simple but wastes 
+         bandwidth, increases file syncing time of syncing.
+    fix: divided the file in content based chunks and syncs only those chunks who are truly changed
+
+- issue: while creating content defined chunks we are reading file char by 
+         char, this can degrade performance due to excessive system calls in case of large files particularly in MBs or GBs
+    fix: instead of reading file char by char, read the file in fixed size 
+         buffer to reduce system calls
+
+- issue: changes are of many types, e.g. rename, delete, modify, create
+         so we need to tell the peer what change occured to which file/dir
+    fix: designed a custom protocol with properties like type(telling what change occured and data to expect in the message) and payload(the real data)
+
+- issue: a format was needed to send the data like json, xml and parsing 
+         it at the peer side
+    fix: used json format to send the data and nlohmann/json library for handling the json request/response
+
+- issue: the two events for file move/rename causes overhead of tracking 
+         both, and waiting for other if only one comes
+    fix: used a hashmap to track the move/rename events using their cookie with 200ms timestamp so that if 200ms passed then this will be treated as delete event
+
+- issue: changes can be present even when the processes were not running 
+         so for complete synced starting we need to sync initial changes but how to find that changes exists or not
+    fix: request peer to send it's data's snapshot as json then parse it and compare both snapshots and find changes, and sync them to server this way we can ensure that both peers have synced data
+
+- issue: there can be a case that we synced changes to server from another 
+         machine and now we need to download the changes at our machine at initial time
+    fix: added downloading changes functionality at initial time by comparing modified files by their modifed time so if peer has modified recently then we fetch those file + files to be deleted/created will be distinguished by if we hadn't a saved peer's snapshot present initially or it was not exactly same with our saved peer's snap , means there are changes after we last synced
+
+- issue: fetching whole snapshot of peer every time when process starts 
+         can can cause high bandwidth usage + time consuming when no of files increase, we need a mechanism to check if our saved peer's snapshot is up to date or not
+    fix: added snapshot versioning functionality , which is calculated based on filename, size, mtime,content hash so that if any file has any changes move, modify, create, delete then snap version will be different, using SHA256 hashing
+
+- issue: watching files at only the first level of directory leaves many 
+         files untracked if present in sub directories, also inotify does'nt handles directory recursively
+    fix: applied watchers separately to each dir/subdir + used a hashmap(wd,dir_path) to track all directories
+
+- issue: normal inotify api causes noisy events while modifying file
+    fix: used non-blocking inotify with epoll to get batched events + event driven architecture
+
+- issue: timers for the move events cause unnecessary polling even though 
+         event driven at every 100ms 
+    fix: created utilities for registering/unregistering timers when first move event comes or last move event resolved
+
+- issue: receiving data from peer causes indefinite wait time as we dont 
+         know how much data will be received and we dont get EOF
+    fix: added support for sending message length first so that peer will know how much data will be received 
+
+- issue: receiving modified chunks data not reliable to assume they will 
+         be sorted, so need a mechanism to replace corresponding chunks from the file in correct order
+    fix: save upcoming chunks in disk first with name of their chunk no, in directory named from the filepath and after receiving final chunk take chunks from disk in sorted manner using ordered_set and replace them in the file
+
+- issue: we have to save chunk's data + metadata like type of chunk, it's 
+         size, offset, is_last_chunk. saving upcoming chunks in .txt format can corrupt binary data
+    fix: added support for saving chunk data + metadata in a binary .bin 
+         file so which enables to save any kind of data
+
+- issue: while saving chunks with filepath as filename is distinguishable but as well as problematic due 
+         to invalid chars
+    fix: used filename sanitizer to replace invalid chars with '-'
+
+- issue: having updated changes at peer side, when snap-file.json got 
+         deleted it causes unexpected behavior even if lastly all changes were synced
+    fix: added pre checks if the peer's snap version is same as our current snap version then no need to go further and skip syncing initial changes
+
+- issue: not getting any idea of how much syncing progress done
+    fix: added progress bar feature to view progress

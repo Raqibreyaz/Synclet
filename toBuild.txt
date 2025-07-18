@@ -81,6 +81,8 @@ deletion: ✅
     . assigning watchers to over all sub directories ✅
     . optimise as much possible for file modification case where a new temp file is created
     . updating snaps when dir is moved, deleted ✅
-    . handling initial changes where dirs can be created/deleted
-    . fixing naming , like remove and delete both are used anywhere, maintaining consistency in naming
+    . handling initial changes where dirs can be created/deleted ✅
+    . fixing naming , like remove and delete both are used anywhere, maintaining consistency in naming 
     . should be fault tolerant so that if syncing interrupted then continues from that point next time , currently it works fine when no interrupt occurs it efficiently sync changes
+    . adding package.json like setup using vcpkg
+    . the timer in watcher causes cpu cycles waste when no events are in the file_rename_tracker so we need an adaptive timer so that epoll should not fire any event if file_rename_tracker is empty

@@ -34,6 +34,8 @@ private:
     std::string watch_dir;
     void apply_watchers(const std::string &dir);
     void apply_epoll_timer();
+    void register_timer();
+    void unregister_timer();
     void fill_events(std::vector<FileEvent> &file_events, struct inotify_event *event);
 
     struct FileMovePair
