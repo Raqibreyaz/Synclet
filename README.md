@@ -1,174 +1,127 @@
-# 📁 Synclet
+# 🧠 Synclet – Efficient, Event-Driven File Sync Without Polling Waste
 
-> A fast, intelligent, chunk-based file sync and backup tool, powered by **Content Defined Chunking (CDC)**.
+> **"A no-nonsense, performant file syncing engine that thinks in diffs and sleeps when idle."**
+
+[![Demo Video](https://img.shields.io/badge/▶️-Watch%20Demo-blue)](./Synclet-Demo.mkv)
+
+---
+* 👉 [Watch on YouTube](https://youtu.be/t_7HGiFl3x0)
+---
+
+## 🚀 Why Synclet?
+
+Tired of constant polling? So were we.
+Tired of syncing whole files just because 2 bytes changed? Same here.
+
+**Synclet** is built to **sync files precisely**, using **content-defined chunking**, **event-driven notifications**, and **peer-based snapshots**, all without wasting cycles.
 
 ---
 
-## 🚀 Overview
+## 🔍 Key Features
 
-**Synclet** is a custom file synchronization protocol that detects file-level and chunk-level changes using **rolling hashes** and **SHA-256**. It's designed to efficiently sync modified chunks only, rather than entire files, saving bandwidth and storage. Inspired by tools like *rsync* and *Google Photos*, it keeps metadata snapshots and supports bidirectional sync using a robust and extensible protocol.
-
----
-
-## 🔍 How It Works
-
-### 📸 Snapshot Creation
-
-A snapshot is a metadata structure describing all files and their chunk-level content using SHA-256 hashes.
-
-#### ✅ Steps:
-
-1. For each file, read using a **sliding window** (`w` bytes).
-2. Calculate a **rolling hash** (like Rabin-Karp) for the window.
-3. When `rolling_hash % N == 0`, a **chunk boundary** is detected.
-4. Generate a SHA-256 hash for the chunk and record it in the snapshot.
-
-> ✅ Weak hash (rolling) detects boundaries, strong hash (SHA-256) confirms uniqueness.
-
-#### ⚠ Why not fixed-size chunks?
-
-Fixed-size chunks fail when even a small change shifts all data forward. CDC detects natural boundaries, minimizing reuploads for small edits.
+* 💤 **No Polling** – Uses `inotify` + `epoll` to only wake up when something changes.
+* 🧩 **Smart Chunk Sync** – Breaks files into logical chunks using rolling hashes, syncing only what’s needed.
+* 🧠 **Snapshot Hashing** – 32-byte global snapshot versioning detects even the smallest file change across machines.
+* 🔄 **Two-Way Syncing** – Automatically detects if peer is ahead or behind, then fetches or sends.
+* 📦 **Binary-safe Transfers** – No corruption, even in weird chunk boundaries. Everything's binary-packed.
+* 📂 **Recursive Directory Tracking** – Watches all nested directories efficiently.
+* 🛠️ **Protocol-Based Events** – From `FILE_CREATE` to `MODIFIED_CHUNK`, your peer always knows what's happening.
+* 📊 **Progress Tracking** – Visual indicators of how much sync has completed.
 
 ---
 
-## 🔄 Change Detection Logic
+## 🧬 How It Works
 
-Each chunk has metadata:
+### 🔹 Snapshot Creation
+
+Each file is chunked using **rolling Rabin-Karp hashes**:
+
+* A window slides over bytes.
+* If `hash % N == 0`, a chunk boundary is marked.
+* SHA-256 ensures strong uniqueness of each chunk.
+
+> ✅ **CDC over fixed-size**: Fixed-size fails for small inserts — everything shifts. Not here.
+
+### 🔹 Event-Driven Sync
+
+* Uses `inotify + epoll` to watch files/dirs non-blockingly.
+* File events (`modify`, `create`, `move`, `delete`) are captured **instantly**, no polling.
+
+### 🔹 Efficient Network Protocol
+
+Your protocol isn't ad-hoc. It's designed like this:
 
 ```json
-{
-  "offset": 0,
-  "chunk_size": 1024,
-  "chunk_no": 2,
-  "hash": "<sha256>"
+TYPE: MODIFIED_CHUNK
+PAYLOAD: {
+  filename, offset, chunk_size, old_chunk_size, is_last_chunk
 }
 ```
 
-### 🔁 What’s considered modified?
+> 🔗 All operations are structured via typed messages + raw data when required.
 
-* ✅ `hash` — definitive change indicator.
-* 🚫 `offset` or `chunk_no` alone are **not** sufficient to consider a chunk modified.
+### 🔹 Initial Sync Logic
 
----
+* Peers exchange `snap-version` hashes.
+* If versions differ:
 
-## 📡 Protocol Design
-
-Every sync action is represented by a `TYPE` and associated `PAYLOAD`.
-
-### ✉️ Protocol Message Types
-
-| Type             | Description               | Payload | Raw Data |
-| ---------------- | ------------------------- | ------- | -------- |
-| `MODIFIED_CHUNK` | Existing chunk modified   | ✅       | ✅        |
-| `FILE_CREATE`    | New file created          | ✅       | ❌        |
-| `FILE_REMOVE`    | File deleted              | ✅       | ❌        |
-| `FILE_RENAME`    | File renamed              | ✅       | ❌        |
-| `FILES_CREATE`   | Multiple file creation    | ✅       | ❌        |
-| `FILES_REMOVE`   | Multiple file deletions   | ✅       | ❌        |
-| `SEND_FILE`      | Sending full file         | ✅       | ❌        |
-| `REQ_CHUNK`      | Request specific chunk    | ✅       | ❌        |
-| `SEND_CHUNK`     | Chunk data in response    | ✅       | ✅        |
-| `REQ_SNAP`       | Request peer snapshot     | ❌       | ❌        |
-| `DATA_SNAP`      | Send complete snapshot    | ✅       | ❌        |
+  * Only the required chunks/files are transferred.
+  * Supports downloading missed changes **or** pushing local changes back.
 
 ---
 
-## 📁 Snapshot Format
+## 🔧 Setup
 
-```json
-{
-  "version": "filename|size|offset:chunk_size:chunk_hash",
-  "files": [
-    {
-      "filename": "docs/report.txt",
-      "size": 12345,
-      "mtime": 1717100000,
-      "chunks": {
-        "<sha256>": {
-          "chunk_no": 1,
-          "hash": "<sha256>",
-          "offset": 0,
-          "chunk_size": 4096
-        }
-      }
-    }
-  ]
-}
+```bash
+make client   # Builds the client binary in ./client/output
+make server   # Builds the server binary in ./server/output
 ```
 
 ---
 
-## ⛓ Copying from Original to Temp File
+## 🔬 Developer Logs (a few highlights)
 
-To reconstruct modified files:
+> See [`dev-logs.txt`](./dev-logs.txt) for more
 
-```json
-chunks = [
-  { "offset": 10, "size": 10 },
-  { "offset": 30, "size": 40 },
-  { "offset": 100, "size": 50 }
-]
-```
-
-Steps:
-
-* Copy original data between modified chunks.
-* Insert new chunk data where required.
-* Combine to form final temp file.
+* ✅ **Reduced polling overhead** using `inotify` instead of file scan loops.
+* ✅ **Chunking optimization** from char-by-char to buffer-based reads to reduce syscalls.
+* ✅ **Smart rename detection** using `cookie` and timestamps.
+* ✅ **Snap versioning** to avoid sending full snapshot every time.
+* ✅ **Progress bar** for user feedback.
+* ✅ **File sanitization** to avoid invalid chars in saved chunks.
 
 ---
 
-## 🔰 Initial Sync Strategy
+## 📁 Blueprint Insights
 
-### When starting from scratch:
+All low-level strategies, from CDC algorithms to protocol structure, are in [`blue-print.txt`](./blue-print.txt). Here’s a glimpse:
 
-1. Client checks for local `peer-snap-file.json`.
-2. If absent, client sends `REQ_SNAP` to server.
-3. Server replies with `DATA_SNAP`.
-4. Client compares snapshots to:
-
-   * Add missing files to server.
-   * Fetch new/updated files from server.
-   * Delete obsolete files (if server is outdated).
-
-### Conflict Resolution:
-
-* Use `mtime` to resolve direction of sync:
-
-  * Client newer → upload delta chunks.
-  * Server newer → fetch delta chunks.
-* Delta chunks stored temporarily in `[filename]_dir/chunk-offset.bin`.
+* 🔍 **Hybrid Chunk Hashing**: Rolling hash to detect chunk boundary, SHA-256 to fingerprint.
+* 🔐 **Binary Chunk Storage**: Metadata and data are stored in raw `.bin` files with custom structure.
+* 📤 **Ordered Set for Chunks**: Ensures deterministic file reconstructions from random chunk delivery order.
+* 🕵️ **Rename detection**: Paired `IN_MOVED_FROM`/`IN_MOVED_TO` using 200ms time window.
 
 ---
 
-## 🧹 Cleaning Noisy Events (Under Consideration)
+## ❤️ Built For
 
-To debounce filesystem noise:
-
-```ts
-HashMap<filename, {
-  last_event,
-  last_time,
-  timer_active,
-  scheduled_action
-}>
-```
-
-This avoids redundant syncs when rapid file system events (e.g., save triggers modify + delete + modify) occur.
+Engineers who hate noisy logs, wasted CPU cycles, or bloated tools — and want **clarity**, **control**, and **clean syncing logic**.
 
 ---
 
-## 🧠 Design Inspirations
+## 📽️ Demo
 
-* **rsync**: for delta-based sync
-* **Bup/Duplicacy**: for snapshot design
-* **Google Photos**: for metadata-based intelligent organization
-* **Telegram**: potential channel storage
+* 👉 [Watch Full Demo](./Synclet-Demo.mkv)
+* 👉 [Watch on YouTube](https://youtu.be/t_7HGiFl3x0)
 
 ---
 
-## 🤝 Contribute
+## 🧩 Credits & Inspiration
 
-Feel free to suggest features, report issues, or create pull requests!
+Thanks to:
+
+* `inotify`, `epoll`, and `timerfd` — for event-driven efficiency.
+* `nlohmann/json` — for no-fuss JSON serialization.
+* Classic chunking papers + rsync for conceptual inspiration.
 
 ---

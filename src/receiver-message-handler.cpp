@@ -17,7 +17,7 @@ ReceiverMessageHandler::ReceiverMessageHandler(const std::string &working_dir, M
 void ReceiverMessageHandler::process_create_file(const FileCreateRemovePayload &payload, DirSnapshot &snaps)
 {
     FileIO fileio(std::format("{}/{}", working_dir, payload.filename), std::ios::out);
-    snaps[payload.filename] = SnapshotManager::createSnapshot(fileio.get_filepath());
+    snaps[payload.filename] = SnapshotManager::createSnapshot(fileio.get_filepath(), working_dir);
 }
 
 // creates a list of files and appends stream data to them then create and add snapshots
@@ -26,7 +26,7 @@ void ReceiverMessageHandler::process_create_file(const FilesCreatedPayload &payl
     for (auto &filename : payload.files)
     {
         FileIO fileio(std::format("{}/{}", working_dir, filename), std::ios::out);
-        snaps[filename] = SnapshotManager::createSnapshot(fileio.get_filepath());
+        snaps[filename] = SnapshotManager::createSnapshot(fileio.get_filepath(), working_dir);
     }
 }
 
@@ -59,7 +59,7 @@ void ReceiverMessageHandler::process_delete_file(const FilesRemovedPayload &payl
 }
 
 // rename the provided file and rename in snaps too!
-void ReceiverMessageHandler::process_file_rename(const FileRenamePayload &payload, DirSnapshot &snaps)
+void ReceiverMessageHandler::process_file_moved(const FileMovedPayload &payload, DirSnapshot &snaps)
 {
     const auto &old_filepath = working_dir + "/" + payload.old_filename;
     const auto &new_filepath = working_dir + "/" + payload.new_filename;
@@ -68,6 +68,147 @@ void ReceiverMessageHandler::process_file_rename(const FileRenamePayload &payloa
 
     auto file_snap = std::move(snaps[payload.old_filename]);
     snaps[payload.new_filename] = std::move(file_snap);
+    snaps.erase(payload.old_filename);
+}
+
+void ReceiverMessageHandler::process_create_dir(const DirCreateRemovePayload &payload)
+{
+    if (payload.dir_path.empty())
+    {
+        std::cerr << "Received Empty Dir Path to Create!" << std::endl;
+        return;
+    }
+
+    std::string fullpath = std::format("{}/{}", working_dir, payload.dir_path);
+
+    if (!fs::create_directory(fullpath))
+    {
+        std::clog << "Failed to create Directory: " << fullpath << " Might be Already Exist!" << std::endl;
+    }
+}
+
+void ReceiverMessageHandler::process_create_dir(const DirsCreatedRemovedPayload &payload)
+{
+    if (payload.dirs.empty())
+    {
+        std::cerr << "No Directory to Create!" << std::endl;
+        return;
+    }
+
+    for (auto dir_path : payload.dirs)
+    {
+        std::string fullpath = std::format("{}/{}", working_dir, dir_path);
+        if (!fs::create_directory(fullpath))
+            std::cerr << "Failed o create Directory: " << fullpath << " Might be Already Exist!" << std::endl;
+    }
+}
+
+void ReceiverMessageHandler::process_delete_dir(const DirCreateRemovePayload &payload, DirSnapshot &snaps)
+{
+    if (payload.dir_path.empty())
+    {
+        std::cerr << "Empty Dir Path Received to Delete" << std::endl;
+        return;
+    }
+
+    std::string a = std::format("{}/", payload.dir_path);
+    std::string b = std::format("./{}/", payload.dir_path);
+    std::string c = std::format("/{}/", payload.dir_path);
+
+    // remove entries from the snap of this folder
+    for (auto it = snaps.begin(); it != snaps.end();)
+    {
+        // remove the file entry from snaps
+        if (
+            it->first.starts_with(a) ||
+            it->first.find(b) != std::string::npos ||
+            it->first.find(c) != std::string::npos)
+            it = snaps.erase(it);
+        else
+            it++;
+    }
+
+    std::string fullpath = std::format("{}/{}", working_dir, payload.dir_path);
+
+    std::clog << fs::remove_all(fullpath) << " entries deleted for " << fullpath << std::endl;
+}
+
+void ReceiverMessageHandler::process_delete_dir(const DirsCreatedRemovedPayload &payload, DirSnapshot &snaps)
+{
+    if (payload.dirs.empty())
+    {
+        std::cerr << "No Dirs Received to Delete" << std::endl;
+        return;
+    }
+
+    // remove entries from the snap of this folder
+    for (auto it = snaps.begin(); it != snaps.end();)
+    {
+        // remove the file entry from snaps
+        if (std::ranges::any_of(
+                payload.dirs,
+                [&](const std::string &dir_path)
+                {
+                    std::string a = std::format("{}/", dir_path);
+                    std::string b = std::format("./{}/", dir_path);
+                    std::string c = std::format("/{}/", dir_path);
+
+                    return it->first.starts_with(a) ||
+                           it->first.find(b) != std::string::npos ||
+                           it->first.find(c) != std::string::npos;
+                }))
+            it = snaps.erase(it);
+
+        // otherwise skip
+        else
+            it++;
+    }
+
+    for (auto &dir_path : payload.dirs)
+    {
+        std::string fullpath = std::format("{}/{}", working_dir, dir_path);
+        std::clog << fs::remove_all(fullpath) << " entries deleted for " << fullpath << std::endl;
+    }
+}
+
+void ReceiverMessageHandler::process_dir_moved(const DirMovedPayload &payload, DirSnapshot &snaps)
+{
+
+    // move the dir
+    const std::string &from = std::format("{}/{}", working_dir, payload.old_dir_path);
+    const std::string &to = std::format("{}/{}", working_dir, payload.new_dir_path);
+    fs::rename(from, to);
+
+    // updating the new path in each file entry
+    std::vector<std::pair<std::string, FileSnapshot>> snap_arr;
+    for (auto it = snaps.begin(); it != snaps.end();)
+    {
+        // finding position where the dir starts
+        size_t dir_start = it->first.find(payload.old_dir_path);
+
+        // skip if the directory is not present in the path
+        if (dir_start == std::string::npos)
+        {
+            it++;
+            continue;
+        }
+
+        // create new path
+        const std::string &new_dir_path =
+            it->first.substr(0, dir_start) +
+            payload.new_dir_path +
+            it->first.substr(dir_start + payload.old_dir_path.size());
+
+        // add new path and the snap to vector
+        snap_arr.push_back({new_dir_path, std::move(it->second)});
+
+        // remove the entry from map
+        it = snaps.erase(it);
+    }
+
+    // moving the entries in map
+    for (auto &p : snap_arr)
+        snaps.insert(std::move(p));
 }
 
 // handle the case where peer is sending modified chunks and update the snap of that file too!
@@ -117,12 +258,12 @@ void ReceiverMessageHandler::process_modified_chunk(const ModifiedChunkPayload &
     chunk_handler.finalize_file(filepath);
 
     // now update the snap of the file
-    snaps[payload.filename] = SnapshotManager::createSnapshot(filepath);
+    snaps[payload.filename] = SnapshotManager::createSnapshot(filepath, working_dir);
 }
 
 void ReceiverMessageHandler::process_file(const SendFilePayload &payload, DirSnapshot &snaps)
 {
-    const std::string filepath = std::format("{}/{}", working_dir, payload.filename);
+    const std::string &filepath = std::format("{}/{}", working_dir, payload.filename);
     FilePairSession file_session(filepath, true);
     file_session.ensure_files_open();
 
@@ -158,7 +299,7 @@ void ReceiverMessageHandler::process_file(const SendFilePayload &payload, DirSna
     std::clog << "\n\n";
 
     // update the file snap
-    snaps[payload.filename] = SnapshotManager::createSnapshot(filepath);
+    snaps[payload.filename] = SnapshotManager::createSnapshot(filepath, working_dir);
 }
 
 // just opens the file appends the data and updates the snap of the file
@@ -171,7 +312,7 @@ void ReceiverMessageHandler::process_file_chunk(const SendChunkPayload &payload,
     file_session.append_data(chunk_data);
     file_session.close_session();
 
-    snaps[payload.filename] = SnapshotManager::createSnapshot(working_dir + "/" + payload.filename);
+    snaps[payload.filename] = SnapshotManager::createSnapshot(working_dir + "/" + payload.filename, working_dir);
 }
 
 // request peer to send the list of files and save on receiving + creates snaps of that files
@@ -291,7 +432,7 @@ void ReceiverMessageHandler::process_fetch_modified_chunks(const std::vector<Fil
         chunk_handler.finalize_file(filepath);
 
         // now update the snap of the file
-        snaps[file_modification.filename] = SnapshotManager::createSnapshot(filepath);
+        snaps[file_modification.filename] = SnapshotManager::createSnapshot(filepath, working_dir);
     }
 }
 
@@ -337,6 +478,24 @@ void ReceiverMessageHandler::process_request_peer_snap(DirSnapshot &peer_snaps)
     }
     else
         throw std::runtime_error("invalid data received");
+}
+
+void ReceiverMessageHandler::process_request_peer_dir_list(std::vector<std::string> &dir_list)
+{
+    const Message msg{.type = MessageType::REQ_DIR_LIST, .payload = {}};
+    messenger.send_json_message(msg);
+
+    Message &&peer_msg = messenger.receive_json_message();
+
+    if (peer_msg.type != MessageType::DIR_LIST)
+        throw std::runtime_error("invalid type of message");
+
+    if (auto payload = std::get_if<DirListPayload>(&(peer_msg.payload)))
+    {
+        dir_list = std::move(payload->dirs);
+    }
+    else
+        throw std::runtime_error("invalid payload received");
 }
 
 void ReceiverMessageHandler::process_get_files(const std::vector<std::string> &files, DirSnapshot &snaps)

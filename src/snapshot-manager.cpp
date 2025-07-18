@@ -1,11 +1,11 @@
 #include "../include/snapshot-manager.hpp"
 
-SnapshotManager::SnapshotManager(const std::string &data_dir_path, const std::string &snap_file_path) : data_dir_path(data_dir_path), snap_file_path(snap_file_path) {}
+SnapshotManager::SnapshotManager(const std::string &data_dir, const std::string &snap_file) : data_dir_path(data_dir), snap_file_path(snap_file) {}
 
 std::string SnapshotManager::create_hash(const std::vector<char> &data)
 {
-    if(data.empty())
-    return "";
+    if (data.empty())
+        return "";
 
     std::deque<char> dq;
 
@@ -23,14 +23,14 @@ std::string SnapshotManager::create_hash(const std::vector<char> &data)
 }
 
 // creates snapshot of the file using content dependent chunking
-FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path)
+FileSnapshot SnapshotManager::createSnapshot(const std::string &file_path, const std::string &dir_to_skip)
 {
     const uint64_t file_size = fs::file_size(file_path);
 
     const time_t last_write_time = to_unix_timestamp(fs::last_write_time(file_path));
 
     // create a snapshot of the file
-    FileSnapshot snapshot(extract_filename_from_path(file_path), file_size, last_write_time, {});
+    FileSnapshot snapshot(extract_filename_from_path(dir_to_skip, file_path), file_size, last_write_time, {});
 
     if (file_size == 0)
         return snapshot;
@@ -148,14 +148,14 @@ std::pair<std::string, DirSnapshot> SnapshotManager::scan_directory()
     std::vector<std::pair<std::string, FileSnapshot>> sorted_snaps;
 
     // first store all the files snaps in vector
-    for (const auto &entry : fs::directory_iterator(data_dir_path))
+    for (const auto &entry : fs::recursive_directory_iterator(data_dir_path))
     {
         // file should be normal file , !socket, !directory
         if (!entry.is_regular_file())
             continue;
 
         // full path required for opening file
-        FileSnapshot &&snapshot = createSnapshot(entry.path().string());
+        FileSnapshot &&snapshot = createSnapshot(entry.path().string(), data_dir_path.string());
 
         sorted_snaps.push_back(std::make_pair(snapshot.filename, std::move(snapshot)));
     }
@@ -188,11 +188,11 @@ std::pair<std::string, DirSnapshot> SnapshotManager::scan_directory()
 }
 
 // Compare two snapshots and return changed/added/deleted files
-DirChanges SnapshotManager::compare_snapshots(
+FileChanges SnapshotManager::compare_snapshots(
     const DirSnapshot &currSnapshot, const DirSnapshot &prevSnapshot)
 {
     // to track if anything is changed
-    DirChanges changes;
+    FileChanges changes;
 
     // check for file addition & modification
     for (const auto &[filename, snap] : currSnapshot)
@@ -223,6 +223,47 @@ DirChanges SnapshotManager::compare_snapshots(
         }
 
     return changes;
+}
+
+DirChanges SnapshotManager::compare_directories(std::vector<std::string> &prev_dirs)
+{
+    sort(prev_dirs.begin(), prev_dirs.end());
+
+    // get all the directories in our data folder
+    std::unordered_set<std::string> curr_dirs;
+    for (auto &entry : fs::recursive_directory_iterator(data_dir_path))
+    {
+        if (entry.is_directory())
+        {
+            const std::string &dir_path = extract_filename_from_path(
+                data_dir_path,
+                entry.path().string());
+
+            curr_dirs.insert(
+                dir_path);
+        }
+    }
+
+    DirChanges dir_changes = {
+        .removed_dirs = {},
+        .added_dirs = {},
+    };
+
+    // check for removed dirs
+    for (auto &dir_path : prev_dirs)
+    {
+        if (!curr_dirs.contains(dir_path))
+            dir_changes.removed_dirs.push_back(dir_path);
+    }
+
+    // check for new/added dirs
+    for (auto &dir_path : curr_dirs)
+    {
+        if (!std::binary_search(prev_dirs.begin(), prev_dirs.end(), dir_path))
+            dir_changes.added_dirs.push_back(dir_path);
+    }
+
+    return dir_changes;
 }
 
 // compare curr and prev snap of the file(using only hash) and get changes as modified, added, removed chunks

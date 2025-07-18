@@ -1,7 +1,10 @@
 #include "../include/chunk-handler.hpp"
 
-ChunkHandler::ChunkHandler(const std::string &filename) : dir_name(filename + "_dir"), filename(filename)
+ChunkHandler::ChunkHandler(const std::string &filename)
+    : dir_name(sanitize_filename(filename + "_dir")),
+      filename(filename)
 {
+
     // if directory not exists then create it
     if (!std::filesystem::exists(dir_name))
         std::filesystem::create_directory(dir_name);
@@ -69,11 +72,12 @@ void ChunkHandler::finalize_file(const std::string &original_filepath)
     // insert all the offset in set
     for (auto &entry : fs::recursive_directory_iterator(dir_name))
     {
-        auto filename = extract_filename_from_path(entry.path().string());
+        auto filename = extract_filename_from_path(dir_name, entry.path().string());
         auto dash = filename.find('-');
         auto dot = filename.find('.');
         uint64_t offset;
 
+        // extracting the offset
         std::from_chars(filename.data() + dash + 1, filename.data() + dot, offset);
 
         sorted_offset.insert(offset);

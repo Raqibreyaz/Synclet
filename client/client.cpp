@@ -31,62 +31,120 @@ void initial_changes_handler(SnapshotManager &snap_manager,
                              SenderMessageHandler &sender_message_handler,
                              DirSnapshot &curr_snap,
                              DirSnapshot &peer_snap,
-                             std::string &peer_snap_version)
+                             std::string &peer_snap_version,
+                             std::string &curr_snap_version)
 {
     const bool was_peer_snap_present = !peer_snap.empty();
     std::string fetched_peer_snap_version = receiver_message_handler.process_request_snap_version();
+
+    // when peer is up to date then go back
+    if (fetched_peer_snap_version == curr_snap_version)
+    {
+        if (!was_peer_snap_present || peer_snap_version != fetched_peer_snap_version)
+        {
+            peer_snap = curr_snap;
+            peer_snap_version = curr_snap_version;
+            snap_manager.save_snapshot(curr_snap);
+        }
+        std::clog << "No initial Changes Found" << std::endl;
+        return;
+    }
+
+    // checking if the last synced changes were the latest to the peer
     const bool was_peer_snap_version_same = was_peer_snap_present &&
                                             fetched_peer_snap_version == peer_snap_version;
 
+    std::vector<std::string> peer_dir_list;
+
+    // when peer has other changes too then fetch it's snap and all the dirs
     // if no snap present or new snap available then fetch snap + update peer_snap and it's snap version
     if (!was_peer_snap_present || !was_peer_snap_version_same)
     {
+        // request peer snap
         receiver_message_handler.process_request_peer_snap(peer_snap);
+
+        // request peer dirs list
+        receiver_message_handler.process_request_peer_dir_list(peer_dir_list);
+
         peer_snap_version = fetched_peer_snap_version;
     }
 
     // compare both snapshots and find changes
-    DirChanges &&dir_changes = snap_manager.compare_snapshots(curr_snap, peer_snap);
+    FileChanges &&file_changes = snap_manager.compare_snapshots(curr_snap, peer_snap);
 
-    if (dir_changes.created_files.empty() &&
-        dir_changes.modified_files.empty() &&
-        dir_changes.removed_files.empty())
+    // get dir changes like new/deleted dirs names
+    DirChanges &&dir_changes = snap_manager.compare_directories(peer_dir_list);
+
+    if (file_changes.created_files.empty() &&
+        file_changes.modified_files.empty() &&
+        file_changes.removed_files.empty() &&
+        dir_changes.added_dirs.empty() &&
+        dir_changes.removed_dirs.empty())
         std::clog << "no initial changes found" << std::endl;
 
-    // when files are created then sync them to peer
-    if (!dir_changes.created_files.empty())
+    // when dirs are created then inform peer to create too!
+    if (!dir_changes.added_dirs.empty())
     {
 
+        // delete the directories if last sync to peer was not latest
+        if (!was_peer_snap_present || !was_peer_snap_version_same)
+        {
+            receiver_message_handler.process_delete_dir(
+                DirsCreatedRemovedPayload{
+                    .dirs = dir_changes.added_dirs},
+                curr_snap);
+        }
+        else
+            sender_message_handler.handle_create_dir(dir_changes.added_dirs);
+    }
+
+    // when dirs are deleted then inform peer to delete them too!
+    if (!dir_changes.removed_dirs.empty())
+    {
+
+        // add the directories if last sync was not latest
+        if (!was_peer_snap_present || !was_peer_snap_version_same)
+        {
+            receiver_message_handler.process_create_dir(DirsCreatedRemovedPayload{
+                .dirs = dir_changes.removed_dirs});
+        }
+        else
+            sender_message_handler.handle_delete_dir(dir_changes.removed_dirs);
+    }
+
+    // when files are created then sync them to peer
+    if (!file_changes.created_files.empty())
+    {
         std::clog << "syncing new files to peer..." << std::endl;
-        sender_message_handler.handle_create_file(dir_changes.created_files);
+        sender_message_handler.handle_create_file(file_changes.created_files);
     }
 
     // when files are not present
-    if (!dir_changes.removed_files.empty())
+    if (!file_changes.removed_files.empty())
     {
         // fetch all the deleted files from peer if it's snap wasn't present or new snap available
         // + update the curr_snap
         if (!was_peer_snap_present || !was_peer_snap_version_same)
         {
             std::clog << "downloading new files from peer..." << std::endl;
-            receiver_message_handler.process_fetch_files(dir_changes.removed_files, curr_snap);
+            receiver_message_handler.process_fetch_files(file_changes.removed_files, curr_snap);
         }
 
         // when curr snap was up to date then ask server to delete the files
         else
         {
             std::clog << "requesting peer to delete files" << std::endl;
-            sender_message_handler.handle_delete_file(dir_changes.removed_files);
+            sender_message_handler.handle_delete_file(file_changes.removed_files);
         }
     }
 
     // when files are modified
-    if (!dir_changes.modified_files.empty())
+    if (!file_changes.modified_files.empty())
     {
         std::vector<FileModification> to_fetch;
         std::vector<FileModification> to_change;
 
-        for (const auto &modified_file : dir_changes.modified_files)
+        for (const auto &modified_file : file_changes.modified_files)
         {
             // more time_t -> more recent
             // if the current file is more older then fetch the modified chunks from peer
@@ -114,7 +172,9 @@ void initial_changes_handler(SnapshotManager &snap_manager,
     }
 
     // now after syncing all changes save the current snap as peer's snap
-    if (!dir_changes.created_files.empty() || !dir_changes.modified_files.empty() || !dir_changes.removed_files.empty())
+    if (!file_changes.created_files.empty() ||
+        !file_changes.modified_files.empty() ||
+        !file_changes.removed_files.empty())
     {
         std::clog << "saving peer snap as cache" << std::endl;
         snap_manager.save_snapshot(curr_snap);
@@ -148,7 +208,7 @@ int main()
                                 receiver_message_handler,
                                 sender_message_handler,
                                 curr_snap, peer_snap,
-                                peer_snap_version);
+                                peer_snap_version, curr_snap_version);
 
         signal_handler = [&](int _)
         {
@@ -167,6 +227,10 @@ int main()
 
             for (const auto &event : events)
             {
+                std::cout
+                    << "filepath: " << event.filepath << std::endl
+                    << "is_directory: " << event.is_directory << std::endl;
+
                 sender_message_handler.handle_event(event, curr_snap);
                 snap_manager.save_snapshot(curr_snap);
             }

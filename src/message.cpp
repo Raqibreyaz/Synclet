@@ -9,11 +9,22 @@ std::string message_type_to_string(MessageType type)
         return "FILE_CREATE";
     case MessageType::FILE_REMOVE:
         return "FILE_REMOVE";
-    case MessageType::FILE_RENAME:
-        return "FILE_RENAME";
+    case MessageType::FILE_MOVED:
+        return "FILE_MOVED";
+    case MessageType::DIR_CREATE:
+        return "DIR_CREATE";
+    case MessageType::DIR_REMOVE:
+        return "DIR_REMOVE";
+    case MessageType::DIR_MOVED:
+        return "DIR_MOVED";
+    case MessageType::DIRS_CREATE:
+        return "DIRS_CREATE";
+    case MessageType::DIRS_REMOVE:
+        return "DIRS_REMOVE";
     case MessageType::MODIFIED_CHUNK:
         return "MODIFIED_CHUNK";
-        return "ADDED_CHUNK";
+        // case MessageType::ADDED
+        // return "ADDED_CHUNK";
     case MessageType::DATA_SNAP:
         return "DATA_SNAP";
     case MessageType::FILES_CREATE:
@@ -24,6 +35,10 @@ std::string message_type_to_string(MessageType type)
         return "REQ_SNAP_VERSION";
     case MessageType::SNAP_VERSION:
         return "SNAP_VERSION";
+    case MessageType::REQ_DIR_LIST:
+        return "REQ_DIR_LIST";
+    case MessageType::DIR_LIST:
+        return "DIR_LIST";
     case MessageType::REQ_SNAP:
         return "REQ_SNAP";
     case MessageType::SEND_FILE:
@@ -49,8 +64,18 @@ MessageType message_type_from_string(const std::string &type)
         return MessageType::FILE_CREATE;
     else if (type == "FILE_REMOVE")
         return MessageType::FILE_REMOVE;
-    else if (type == "FILE_RENAME")
-        return MessageType::FILE_RENAME;
+    else if (type == "FILE_MOVED")
+        return MessageType::FILE_MOVED;
+    else if (type == "DIR_CREATE")
+        return MessageType::DIR_CREATE;
+    else if (type == "DIR_REMOVE")
+        return MessageType::DIR_REMOVE;
+    else if (type == "DIR_MOVED")
+        return MessageType::DIR_MOVED;
+    else if (type == "DIRS_CREATE")
+        return MessageType::DIRS_CREATE;
+    else if (type == "DIRS_REMOVE")
+        return MessageType::DIRS_REMOVE;
     else if (type == "DATA_SNAP")
         return MessageType::DATA_SNAP;
     else if (type == "FILES_CREATE")
@@ -61,6 +86,10 @@ MessageType message_type_from_string(const std::string &type)
         return MessageType::REQ_SNAP_VERSION;
     else if (type == "SNAP_VERSION")
         return MessageType::SNAP_VERSION;
+    else if (type == "REQ_DIR_LIST")
+        return MessageType::REQ_DIR_LIST;
+    else if (type == "DIR_LIST")
+        return MessageType::DIR_LIST;
     else if (type == "REQ_SNAP")
         return MessageType::REQ_SNAP;
     else if (type == "SEND_FILE")
@@ -114,6 +143,14 @@ void from_json(const json &j, Message &m)
         m.payload = payload_json.get<SnapVersionPayload>();
         break;
 
+    case MessageType::REQ_DIR_LIST:
+        m.payload = std::monostate{};
+        break;
+
+    case MessageType::DIR_LIST:
+        m.payload = payload_json.get<DirListPayload>();
+        break;
+
     case MessageType::REQ_SNAP:
         m.payload = std::monostate{};
         break;
@@ -126,8 +163,28 @@ void from_json(const json &j, Message &m)
         m.payload = payload_json.get<FileCreateRemovePayload>();
         break;
 
-    case MessageType::FILE_RENAME:
-        m.payload = payload_json.get<FileRenamePayload>();
+    case MessageType::FILE_MOVED:
+        m.payload = payload_json.get<FileMovedPayload>();
+        break;
+
+    case MessageType::DIR_CREATE:
+        m.payload = payload_json.get<DirCreateRemovePayload>();
+        break;
+
+    case MessageType::DIR_REMOVE:
+        m.payload = payload_json.get<DirCreateRemovePayload>();
+        break;
+
+    case MessageType::DIR_MOVED:
+        m.payload = payload_json.get<DirMovedPayload>();
+        break;
+
+    case MessageType::DIRS_CREATE:
+        m.payload = payload_json.get<DirsCreatedRemovedPayload>();
+        break;
+
+    case MessageType::DIRS_REMOVE:
+        m.payload = payload_json.get<DirsCreatedRemovedPayload>();
         break;
 
     case MessageType::MODIFIED_CHUNK:
