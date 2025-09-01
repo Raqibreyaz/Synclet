@@ -6,6 +6,11 @@
          bandwidth, increases file syncing time of syncing.
     fix: divided the file in content based chunks and syncs only those chunks who are truly changed
 
+- issue: fixed size chunking became inefficient in case modification done at 
+         file beginning then whole data after it become shifted and SHA-256
+         hash will come different
+     fix: used content defined chunking so that chunks will only be created on basis of content, it is not perfect but increases efficiency as many chunks after the modified chunk remains unaltered
+
 - issue: while creating content defined chunks we are reading file char by 
          char, this can degrade performance due to excessive system calls in case of large files particularly in MBs or GBs
     fix: instead of reading file char by char, read the file in fixed size 
