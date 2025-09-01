@@ -35,6 +35,8 @@ int main()
 
         // create a server on localhost
         TcpServer server("127.0.0.1", std::to_string(PORT));
+        std::clog<<"Server is Listening on Port: "<<PORT<<std::endl;
+
         TcpConnection client = server.acceptClient();
         Messenger messenger(client);
 
