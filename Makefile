@@ -16,7 +16,8 @@ CLIENT_SRCS := client/client.cpp \
 	src/file-pair-session.cpp \
 	src/sender-message-handler.cpp \
 	src/receiver-message-handler.cpp \
-	src/chunk-handler.cpp
+	src/chunk-handler.cpp \
+	src/initial-sync-handler.cpp
 	
 
 SERVER_SRCS := server/server.cpp \
@@ -32,7 +33,8 @@ SERVER_SRCS := server/server.cpp \
 	src/file-pair-session.cpp \
 	src/sender-message-handler.cpp \
 	src/receiver-message-handler.cpp \
-	src/chunk-handler.cpp
+	src/chunk-handler.cpp \
+	src/initial-sync-handler.cpp
 
 CLIENT_OBJS = $(CLIENT_SRCS:.cpp=.o)
 SERVER_OBJS = $(SERVER_SRCS:.cpp=.o)
