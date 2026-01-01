@@ -6,9 +6,9 @@
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/server/output",
-      "args": [],
+      "args": ["--port=4000"],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/server",
+      "cwd": "${workspaceFolder}",
       "MIMode": "gdb",
       "miDebuggerPath": "/usr/bin/gdb",
       "setupCommands": [
@@ -24,9 +24,9 @@
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/client/output",
-      "args": [],
+      "args": ["--datadir=./data","--server=127.0.0.1","--port=4000"],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/client",
+      "cwd": "${workspaceFolder}",
       "MIMode": "gdb",
       "miDebuggerPath": "/usr/bin/gdb",
       "setupCommands": [

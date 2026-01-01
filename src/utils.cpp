@@ -18,6 +18,7 @@ std::string sanitize_filename(const std::string &filename)
 
     return sanitized;
 }
+
 std::string extract_filename_from_path(const std::string &dir_to_skip, const std::string &path)
 {
     size_t part_to_skip_pos = path.find(dir_to_skip);
@@ -51,6 +52,30 @@ std::time_t to_unix_timestamp(const std::filesystem::file_time_type &mtime)
 {
     using namespace std::chrono;
     return system_clock::to_time_t(time_point_cast<system_clock::duration>(mtime - std::filesystem::file_time_type::clock::now() + system_clock::now()));
+}
+
+std::unordered_map<std::string,std::string> parse_cli_args(const int argc, const char* const argv[]){
+    std::unordered_map<std::string,std::string> cli_args;
+
+    for(int i = 0; i < argc; i++){
+        const std::string& arg = argv[i];
+
+        // when this is a CLI Arg
+        if(arg.find("--") == 0){
+            size_t pos = arg.find('=');
+
+            // when '=' exists then proceed by splitting key and value
+            // --key=value
+            if(pos != std::string::npos){
+                std::string key = arg.substr(2,pos - 2);
+                std::string value = arg.substr(pos + 1);
+
+                cli_args[key] = value;
+            }
+        }
+    }
+
+    return cli_args;
 }
 
 void print_progress_bar(const std::string &message, double progress, size_t bar_width)

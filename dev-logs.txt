@@ -74,3 +74,12 @@
 
 - issue: not getting any idea of how much syncing progress done
     fix: added progress bar feature to view progress
+
+- issue: server and client were only on the running the hardcoded values for directory watching and connection management
+    fix: fixed the issue by taking CLI arguments from user, now watcher can watch any given directory in the entire system(under permissions), and client can connect to the provided server now with given port
+
+- issue: the server has cluttered switch statement with repetitive logic of variants handling
+     fix: got fixed with templated function
+
+- issue: server is getting crashed each time the client disconnects by any reason
+     fix: handled SIGPIPE when client disconnects unexpectedly by ignoring the signal + then move to listen for other clients

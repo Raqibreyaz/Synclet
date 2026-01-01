@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <unordered_map>
@@ -15,9 +16,9 @@
 #include "../include/receiver-message-handler.hpp"
 
 #define PORT 9000
-#define SERVER_IP "127.0.0.1"
-#define DATA_DIR "./data"
-#define PEER_SNAP_FILE "./peer-snap-file.json"
+#define SERVER_URL "127.0.0.1"
+#define DATA_DIR "client/data"
+#define PEER_SNAP_FILE "peer-snap-file.json"
 
 std::function<void(int)> signal_handler = nullptr;
 void signal_handler_wrap(int sig)
@@ -181,24 +182,36 @@ void initial_changes_handler(SnapshotManager &snap_manager,
     }
 };
 
-int main()
+int main(int argc, const char *argv[])
 {
+    const std::string user_home = std::getenv("HOME");
+    const std::unordered_map<std::string, std::string> cli_args = parse_cli_args(argc, argv);
+
+    const std::string peer_snap_filepath = user_home + "/" + PEER_SNAP_FILE;
+    const std::string data_dir_path = cli_args.contains("datadir") ? cli_args.at("datadir") : DATA_DIR;
+    const std::string server_url = cli_args.contains("server") ? cli_args.at("server") : SERVER_URL;
+    const std::string server_port = cli_args.contains("port") ? cli_args.at("port") : std::to_string(PORT);
+
+    // create the data dir if not exists
+    if(!fs::exists(data_dir_path))
+        fs::create_directory(data_dir_path);
+
     try
     {
         // configuring snap manager and watcher over the working dir
-        SnapshotManager snap_manager(DATA_DIR, PEER_SNAP_FILE);
+        SnapshotManager snap_manager(data_dir_path, peer_snap_filepath);
 
         // create connection to server
-        TcpConnection client(SERVER_IP, std::to_string(PORT));
+        TcpConnection client(server_url, server_port);
 
         // configuring messenger to send/receive messages
         Messenger messenger(client);
 
         // configuring sending message handler to sync changes
-        SenderMessageHandler sender_message_handler(messenger, DATA_DIR);
+        SenderMessageHandler sender_message_handler(messenger, data_dir_path);
 
         // configuring receiving message handler to request & receive message
-        ReceiverMessageHandler receiver_message_handler(DATA_DIR, messenger);
+        ReceiverMessageHandler receiver_message_handler(data_dir_path, messenger);
 
         // get current snap and peer's snap
         auto [curr_snap_version, curr_snap] = snap_manager.scan_directory();
@@ -219,10 +232,10 @@ int main()
         signal(SIGINT, signal_handler_wrap);
 
         // continuously watch for changes to sync
-        std::clog << "waiting for file changes..." << std::endl;
-        Watcher watcher(DATA_DIR);
+        Watcher watcher(data_dir_path);
         while (true)
         {
+            std::clog << "waiting for file changes..." << std::endl;
             const auto &events = watcher.poll_events();
 
             for (const auto &event : events)

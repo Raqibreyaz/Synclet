@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <chrono>
 #include <unordered_set>
+#include <unordered_map>
 #include <cmath>
 
 // returns the filename from the filepath
@@ -17,5 +18,7 @@ std::string sanitize_filename(const std::string& filename);
 std::string convert_to_binary_string(size_t n);
 
 std::time_t to_unix_timestamp(const std::filesystem::file_time_type &mtime);
+
+std::unordered_map<std::string,std::string> parse_cli_args(const int argc, const char* const argv[]);
 
 void print_progress_bar(const std::string &message, double progress, size_t bar_width = 30);

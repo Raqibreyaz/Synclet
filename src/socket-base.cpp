@@ -41,9 +41,14 @@ std::string SocketBase::receiveSome(const size_t maxSize = 1024)
                                       0);
 
         if (received_bytes < 0)
+        {
+            if (errno == ECONNRESET || errno == EPIPE)
+                throw std::runtime_error("Connection reset by peer");
+
             throw std::runtime_error(std::string("recv failed: ") + std::strerror(errno));
+        }
         if (received_bytes == 0)
-            throw std::runtime_error("Unexpected EOF");
+            throw std::runtime_error("Client disconnected gracefully");
 
         total_received_bytes += received_bytes;
     }
