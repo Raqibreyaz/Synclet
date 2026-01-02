@@ -1,6 +1,6 @@
-VCPKG := $(HOME)/vcpkg
+VCPKG := ./vcpkg_installed
 CXX := g++
-CXX_FLAGS := -Wall -Wextra -g -std=c++20 -I$(VCPKG)/installed/x64-linux/include
+CXX_FLAGS := -Wall -Wextra -g -std=c++20 -I$(VCPKG)/x64-linux/include
 
 CLIENT_SRCS := client/client.cpp \
 	src/message.cpp \

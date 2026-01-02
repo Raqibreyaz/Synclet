@@ -4,7 +4,7 @@
       "name": "Linux",
       "includePath": [
         "${workspaceFolder}/**",
-        "/home/raquib/vcpkg/installed/x64-linux/include"
+        "${workspaceFolder}/vcpkg_installed/x64-linux/include"
       ],
       "defines": [],
       "compilerPath": "/usr/bin/g++",

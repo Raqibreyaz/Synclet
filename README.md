@@ -29,6 +29,7 @@ Tired of syncing whole files just because 2 bytes changed? Same here.
 - 📂 **Recursive Directory Tracking** – Watches all nested directories efficiently.
 - 🛠️ **Protocol-Based Events** – From `FILE_CREATE` to `MODIFIED_CHUNK`, your peer always knows what's happening.
 - 📊 **Progress Tracking** – Visual indicators of how much sync has completed.
+- ✅ **CLI-configurable** watch path and server address/port for flexible deployment.
 
 ---
 
@@ -72,15 +73,6 @@ PAYLOAD: {
 
 ---
 
-## 🔧 Setup
-
-```bash
-make client   # Builds the client binary in ./client/output
-make server   # Builds the server binary in ./server/output
-```
-
----
-
 ## 🔬 Developer Logs (a few highlights)
 
 > See [`dev-logs.txt`](./dev-logs.txt) for more
@@ -91,6 +83,7 @@ make server   # Builds the server binary in ./server/output
 - ✅ **Snap versioning** to avoid sending full snapshot every time.
 - ✅ **Progress bar** for user feedback.
 - ✅ **File sanitization** to avoid invalid chars in saved chunks.
+- ✅ **CLI-configurable** watch path and server address/port for flexible deployment.
 
 ---
 
@@ -138,6 +131,50 @@ Engineers who hate noisy logs, wasted CPU cycles, or bloated tools — and want 
 - 👉 [Watch on YouTube](https://youtu.be/t_7HGiFl3x0)
 
 ---
+
+## 🧰 Installation
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/Raqibreyaz/Synclet.git
+cd Synclet
+
+# 2. Run system setup (installs required system libraries)
+chmod +x setup.sh        # may be optional if already executable
+./setup.sh               # or: sudo ./setup.sh if it needs root
+
+# 3. Install C/C++ dependencies via vcpkg
+vcpkg install             # uses the project's vcpkg.json / ports to fetch libs 
+
+# 4. Build client and server
+make client
+make server
+```
+
+## ▶️ Usage
+
+After building, binaries are created under `./client/output` and `./server/output`.
+
+- **Start the server**
+
+```bash
+./server/output \
+  --datadir=/path/to/server_data_dir \
+  --port=7000
+```
+
+- **Start the client**
+
+```bash
+./client/output \
+  --datadir=/path/to/watch_dir \
+  --server=server_host_or_ip \
+  --port=7000
+```
+
+- `--datadir` on the **server** is where Synclet stores Data of Client.
+- `--datadir` on the **client** is the Data directory being watched and synced.
+- `--server` can be an IP or hostname reachable from the client.
 
 ## 🧩 Credits & Inspiration
 

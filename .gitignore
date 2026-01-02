@@ -9,3 +9,4 @@ data
 output
 learning_cmake*
 *.js
+vcpkg_installed

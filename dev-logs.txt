@@ -86,3 +86,5 @@
 
 - issue: initial_changes_handler() was handling too much by handling multiple conditions in a single function
      fix: fixed by abstracting its logic by a class + private methods for each condition
+
+- issue: the snap versioning at server side not get updated for each change, causing invalid info
